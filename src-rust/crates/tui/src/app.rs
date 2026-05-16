@@ -982,8 +982,6 @@ pub struct App {
     /// each frame. Used by double/triple-click word and paragraph detection
     /// (issue #149 follow-up: prior word-boundary detection was a placeholder).
     pub last_row_text: RefCell<std::collections::HashMap<u16, String>>,
-    /// When true, releasing a drag selection automatically copies it to clipboard.
-    pub auto_copy_selection: bool,
 
     // ---- Advanced mouse interaction state --------------------------------
     /// Timestamp of the last left mouse click (for double/triple-click detection).
@@ -1180,9 +1178,6 @@ impl App {
         let config = config;
         let model_name = config.effective_model().to_string();
         let user_keybindings = UserKeybindings::load(&Settings::config_dir());
-        let auto_copy_on_highlight = Settings::load_sync()
-            .map(|s| s.auto_copy_on_highlight)
-            .unwrap_or(false);
         Self {
             config,
             cost_tracker,
@@ -1388,7 +1383,6 @@ impl App {
             selection_focus: None,
             selection_text: RefCell::new(String::new()),
             last_row_text: RefCell::new(std::collections::HashMap::new()),
-            auto_copy_selection: auto_copy_on_highlight,
             last_click_time: None,
             last_click_position: None,
             click_count: 0,
@@ -5584,7 +5578,7 @@ impl App {
                 // Clear if no actual drag (single click = no selection)
                 if self.selection_anchor == self.selection_focus {
                     self.clear_selection();
-                } else if self.auto_copy_selection {
+                } else if self.settings_screen.auto_copy_enabled {
                     // Auto-copy finalized selection to clipboard.
                     let sel_text = self.selection_text.borrow().clone();
                     if !sel_text.is_empty() {

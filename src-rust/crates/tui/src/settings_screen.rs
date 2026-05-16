@@ -60,6 +60,7 @@ pub struct SettingsScreen {
     pub terminal_progress_bar: bool,
     pub verbose: bool,
     pub cursor_blink_enabled: bool,
+    pub auto_copy_enabled: bool,
 }
 
 impl SettingsScreen {
@@ -82,6 +83,7 @@ impl SettingsScreen {
             terminal_progress_bar: true,
             verbose: false,
             cursor_blink_enabled: false,
+            auto_copy_enabled: false,
         }
     }
 
@@ -104,6 +106,7 @@ impl SettingsScreen {
         self.terminal_progress_bar = read_setting_bool(&self.settings_snapshot, "terminalProgressBar", true);
         self.verbose = self.settings_snapshot.config.verbose;
         self.cursor_blink_enabled = read_setting_bool(&self.settings_snapshot, "cursorBlinkEnabled", false);
+        self.auto_copy_enabled = self.settings_snapshot.auto_copy_on_highlight;
     }
 
     pub fn close(&mut self) {
@@ -313,6 +316,13 @@ fn all_entries(screen: &SettingsScreen) -> Vec<SettingsEntry> {
             description: "Enable cursor blinking in the chat prompt.",
             kind: SettingKind::Bool,
             value: if screen.cursor_blink_enabled { "true" } else { "false" }.to_string(),
+        },
+        SettingsEntry {
+            key: "auto_copy_enabled",
+            label: "Auto-copy on highlight",
+            description: "Automatically copy highlighted text to clipboard.",
+            kind: SettingKind::Bool,
+            value: if screen.auto_copy_enabled { "true" } else { "false" }.to_string(),
         },
     ]
 }
@@ -629,6 +639,11 @@ fn toggle_or_cycle_current(screen: &mut SettingsScreen) {
                         screen.cursor_blink_enabled = new_value;
                         save_setting_bool("cursorBlinkEnabled", new_value);
                     }
+                    "auto_copy_enabled" => {
+                        screen.auto_copy_enabled = new_value;
+                        screen.settings_snapshot.auto_copy_on_highlight = new_value;
+                        let _ = screen.settings_snapshot.save_sync();
+                    }
                     _ => {}
                 }
             }
@@ -671,10 +686,10 @@ mod tests {
     }
 
     #[test]
-    fn all_entries_returns_nine_settings() {
+    fn all_entries_returns_ten_settings() {
         let screen = SettingsScreen::new();
         let entries = all_entries(&screen);
-        assert_eq!(entries.len(), 9, "Should have 9 editable settings");
+        assert_eq!(entries.len(), 10, "Should have 10 editable settings");
     }
 
     #[test]
