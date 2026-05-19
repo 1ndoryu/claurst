@@ -84,6 +84,29 @@ pub fn parse_keystroke(s: &str) -> Option<ParsedKeystroke> {
     })
 }
 
+fn format_chord_string(chord: &Chord) -> String {
+    chord
+        .iter()
+        .map(|ks| {
+            let mut parts = Vec::new();
+            if ks.ctrl {
+                parts.push("ctrl");
+            }
+            if ks.alt {
+                parts.push("alt");
+            }
+            if ks.shift {
+                parts.push("shift");
+            }
+            if ks.meta {
+                parts.push("meta");
+            }
+            parts.push(&ks.key);
+            parts.join("+")
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
 fn normalize_key(k: &str) -> String {
     match k {
         "esc" | "escape" => "escape".to_string(),
@@ -169,6 +192,8 @@ pub fn default_bindings() -> Vec<ParsedBinding> {
         ("end", "goLineEnd", KeyContext::Chat),
         ("cmd+left", "goLineStart", KeyContext::Chat),
         ("cmd+right", "goLineEnd", KeyContext::Chat),
+        ("ctrl+left", "moveWordBackward", KeyContext::Chat),
+        ("ctrl+right", "moveWordForward", KeyContext::Chat),
 
         // Text Editing (Emacs-style) + app shortcuts
         ("ctrl+a", "openModelPicker", KeyContext::Chat),
@@ -300,12 +325,28 @@ pub fn default_bindings() -> Vec<ParsedBinding> {
         .collect()
 }
 
+/// Current schema version for keybindings
+pub const KEYBINDINGS_SCHEMA_VERSION: u32 = 1;
 /// User keybindings loaded from ~/.claurst/keybindings.json
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UserKeybindings {
+    #[serde(default = "default_schema_version")]
+    pub schema_version: u32,
     pub bindings: Vec<UserBinding>,
 }
 
+fn default_schema_version() -> u32 {
+    KEYBINDINGS_SCHEMA_VERSION
+}
+
+impl Default for UserKeybindings {
+    fn default() -> Self {
+        Self {
+            schema_version: KEYBINDINGS_SCHEMA_VERSION,
+            bindings: Vec::new(),
+        }
+    }
+}
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct JsonKeybindingConfig {
     #[serde(default)]
@@ -357,7 +398,18 @@ impl UserKeybindings {
     pub fn load(config_dir: &Path) -> Self {
         let path = config_dir.join("keybindings.json");
         if let Ok(content) = std::fs::read_to_string(&path) {
-            Self::from_json_str(&content)
+            let mut kb = Self::from_json_str(&content);
+            let old_version = kb.schema_version;
+            kb.smart_merge_with_defaults();
+
+            // Save back if schema was updated
+            if kb.schema_version > old_version {
+                if let Err(e) = kb.save(config_dir) {
+                    warn!("Failed to save updated keybindings: {}", e);
+                }
+            }
+
+            kb
         } else {
             Self::default()
         }
@@ -384,7 +436,68 @@ impl UserKeybindings {
                 })
             })
             .collect();
-        Ok(Self { bindings })
+        Ok(Self {
+            schema_version: KEYBINDINGS_SCHEMA_VERSION,
+            bindings,
+        })
+    }
+
+    /// Smart merge: preserve user customizations while adding new defaults
+    pub fn smart_merge_with_defaults(&mut self) {
+        if self.schema_version >= KEYBINDINGS_SCHEMA_VERSION {
+            return; // Already up to date
+        }
+
+        let old_version = self.schema_version;
+        self.schema_version = KEYBINDINGS_SCHEMA_VERSION;
+
+        // Build a set of user-customized bindings (those that differ from old defaults)
+        // and bindings user explicitly unbound
+        let mut user_customizations: std::collections::HashMap<String, Option<String>> =
+            std::collections::HashMap::new();
+        for binding in &self.bindings {
+            user_customizations
+                .insert(binding.chord.clone(), binding.action.clone());
+        }
+
+        // Get current defaults and integrate customizations
+        let mut merged_bindings = Vec::new();
+        for default in default_bindings() {
+            let chord_str = format_chord_string(&default.chord);
+            let context_str = format!("{:?}", default.context);
+
+            if let Some(custom_action) = user_customizations.get(&chord_str) {
+                // User has customized this binding, use their version
+                merged_bindings.push(UserBinding {
+                    chord: chord_str.clone(),
+                    action: custom_action.clone(),
+                    context: Some(context_str),
+                });
+                user_customizations.remove(&chord_str);
+            } else {
+                // Use the default
+                merged_bindings.push(UserBinding {
+                    chord: chord_str,
+                    action: default.action.clone(),
+                    context: Some(context_str),
+                });
+            }
+        }
+
+        // Add any remaining user customizations that aren't in current defaults
+        for (chord, action) in user_customizations {
+            merged_bindings.push(UserBinding {
+                chord,
+                action,
+                context: None,
+            });
+        }
+
+        self.bindings = merged_bindings;
+        warn!(
+            "Keybindings schema upgraded from v{} to v{}. User customizations preserved.",
+            old_version, KEYBINDINGS_SCHEMA_VERSION
+        );
     }
 }
 
