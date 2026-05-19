@@ -82,7 +82,7 @@ const PROMPT_SLASH_COMMANDS: &[(&str, &str)] = &[
     ("caveman", "Caveman speech mode — save big token"),
     ("rocky", "Rocky speech mode — amaze amaze amaze"),
     ("normal", "Deactivate speech mode"),
-    ("quit", "Quit Claurst"),
+    ("quit", "Exit Claurst"),
     ("refresh", "Clear saved provider auth and model caches"),
     ("rename", "Rename this session"),
     ("resume", "Resume a previous session"),
@@ -712,7 +712,7 @@ pub struct App {
     pub status_message: Option<String>,
     /// Randomly chosen thinking verb shown next to the spinner while streaming.
     pub spinner_verb: Option<String>,
-    pub should_quit: bool,
+    pub should_exit: bool,
     pub show_help: bool,
 
     // Extended state
@@ -1069,6 +1069,10 @@ pub struct App {
     pub managed_agent_cost_breakdown: Option<(f64, f64, f64)>,
     /// Whether managed agent mode is currently active.
     pub managed_agents_active: bool,
+    /// Timestamp of the first exit key press that showed confirmation (valid for ~2 seconds).
+    pub last_exit_key_warning: Option<std::time::Instant>,
+    /// Which exit key ('c' or 'd') started the current confirmation sequence.
+    pub exit_key_sequence_start: Option<char>,
 }
 
 const SPINNER_VERBS: &[&str] = &[
@@ -1249,7 +1253,7 @@ impl App {
             streaming_thinking: String::new(),
             status_message: None,
             spinner_verb: None,
-            should_quit: false,
+            should_exit: false,
             show_help: false,
             tool_use_blocks: Vec::new(),
             permission_request: None,
@@ -1455,6 +1459,8 @@ impl App {
             update_available: None,
             managed_agent_cost_breakdown: None,
             managed_agents_active: false,
+            last_exit_key_warning: None,
+            exit_key_sequence_start: None,
         }
     }
 
@@ -2083,7 +2089,7 @@ impl App {
                 true
             }
             "exit" | "quit" => {
-                self.should_quit = true;
+                self.should_exit = true;
                 true
             }
             "vim" => {
@@ -2852,7 +2858,7 @@ impl App {
             match key.code {
                 KeyCode::Char('1') | KeyCode::Esc => {
                     // "No, exit" — quit immediately
-                    self.should_quit = true;
+                    self.should_exit = true;
                 }
                 KeyCode::Char('2') => {
                     // "Yes, I accept" — dismiss and continue
@@ -2864,7 +2870,7 @@ impl App {
                     if self.bypass_permissions_dialog.is_accept_selected() {
                         self.bypass_permissions_dialog.dismiss();
                     } else {
-                        self.should_quit = true;
+                        self.should_exit = true;
                     }
                 }
                 _ => {}
@@ -3933,6 +3939,7 @@ impl App {
                 // If text is selected, copy it to clipboard instead of quitting.
                 let sel_text = self.selection_text.borrow().clone();
                 if self.selection_anchor.is_some() && !sel_text.is_empty() {
+                    // Text is selected: copy to clipboard.
                     let copied = crate::image_paste::write_clipboard_text(&sel_text);
                     self.selection_anchor = None;
                     self.selection_focus = None;
@@ -3941,23 +3948,28 @@ impl App {
                         self.notifications.push(NotificationKind::Info, "Copied to clipboard".to_string(), Some(2));
                     }
                 } else if self.is_streaming {
+                    // Cancel streaming.
                     self.is_streaming = false;
                     self.spinner_verb = None;
                     self.streaming_text.clear();
                     self.streaming_thinking.clear();
                     self.tool_use_blocks.clear();
                     self.status_message = Some("Cancelled.".to_string());
-                } else if !self.prompt_input.is_empty() {
-                    // Non-empty prompt — clear it (matches bash/readline Ctrl+C).
-                    self.prompt_input.clear();
-                    self.refresh_prompt_input();
+                    self.complete_current_turn_snapshot(true);
                 } else {
-                    self.should_quit = true;
+                    // No text selected and not streaming: handle exit confirmation sequence.
+                    // Always clear the prompt input on Ctrl+C.
+                    if !self.prompt_input.is_empty() {
+                        self.prompt_input.clear();
+                        self.refresh_prompt_input();
+                    }
+                    self.handle_exit_key_confirmation('c');
                 }
             }
             KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                // Ctrl+D on empty input: trigger two-press exit confirmation (like Ctrl+C).
                 if self.prompt_input.is_empty() {
-                    self.should_quit = true;
+                    self.handle_exit_key_confirmation('d');
                 }
             }
 
@@ -4236,6 +4248,14 @@ impl App {
 
             _ => {}
         }
+
+        // Reset exit confirmation sequence if user presses any key other than Ctrl+C or Ctrl+D.
+        let is_exit_key = key.modifiers.contains(KeyModifiers::CONTROL) && matches!(key.code, KeyCode::Char(c) if c == 'c' || c == 'd' || c == 'C' || c == 'D');
+        if !is_exit_key {
+            self.last_exit_key_warning = None;
+            self.exit_key_sequence_start = None;
+        }
+
         false
     }
 
@@ -4556,6 +4576,38 @@ impl App {
         false
     }
 
+    fn handle_exit_key_confirmation(&mut self, mut key_char: char) {
+        fn exit_message(key: char) -> &'static str {
+            if key == 'c' {
+                "Press Ctrl+C again to exit"
+            } else {
+                "Press Ctrl+D again to exit"
+            }
+        }
+
+        // Check if we have an active warning within the timeout
+        if let Some(warning_time) = self.last_exit_key_warning {
+            if warning_time.elapsed().as_secs_f64() <= 2.0 {
+                if self.exit_key_sequence_start == Some(key_char) {
+                    // Matching key - exit
+                    self.should_exit = true;
+                    self.last_exit_key_warning = None;
+                    self.exit_key_sequence_start = None;
+                    return;
+                }
+                if let Some(other_key) = self.exit_key_sequence_start {
+                    // Wrong key pressed - show message for the original key and reset timer
+                    key_char = other_key;
+                }
+            }
+        }
+
+        // Start new sequence (or show message for wrong key)
+        self.notifications.push(NotificationKind::Info, exit_message(key_char).to_string(), Some(2));
+        self.last_exit_key_warning = Some(std::time::Instant::now());
+        self.exit_key_sequence_start = Some(key_char);
+    }
+
     fn handle_keybinding_action(&mut self, action: &str) -> bool {
         match action {
             "interrupt" => {
@@ -4567,13 +4619,33 @@ impl App {
                     self.tool_use_blocks.clear();
                     self.status_message = Some("Cancelled.".to_string());
                 } else {
-                    self.should_quit = true;
+                    // Handle exit confirmation: require two exit key presses within 2 seconds.
+                    // Always clear the prompt input on Ctrl+C.
+                    if !self.prompt_input.is_empty() {
+                        self.prompt_input.clear();
+                        self.refresh_prompt_input();
+                    }
+
+                    let elapsed = self.last_exit_key_warning.map(|t| t.elapsed().as_secs_f64());
+                    let is_valid = elapsed.map(|e| e <= 2.0).unwrap_or(false);
+
+                    if self.last_exit_key_warning.is_some() && is_valid {
+                        // A warning is active and within 2 seconds: exit.
+                        self.should_exit = true;
+                        self.last_exit_key_warning = None;
+                        self.exit_key_sequence_start = None;
+                    } else {
+                        // First press or timeout expired: show exit confirmation.
+                        self.notifications.push(NotificationKind::Info, "Press Ctrl+C again to exit".to_string(), Some(2));
+                        self.last_exit_key_warning = Some(std::time::Instant::now());
+                        self.exit_key_sequence_start = Some('c');
+                    }
                 }
                 false
             }
             "exit" => {
                 if self.prompt_input.is_empty() {
-                    self.should_quit = true;
+                    self.should_exit = true;
                 }
                 false
             }
@@ -6067,9 +6139,9 @@ impl App {
                         // Honour `:q`/`:wq` from vim command-line mode
                         if self.prompt_input.vim_quit_requested {
                             self.prompt_input.vim_quit_requested = false;
-                            self.should_quit = true;
+                            self.should_exit = true;
                         }
-                        if self.should_quit {
+                        if self.should_exit {
                             return Ok(None);
                         }
                         if should_submit {
@@ -6324,9 +6396,9 @@ mod tests {
     #[test]
     fn test_exit_slash_command_sets_quit_flag() {
         let mut app = make_app();
-        assert!(!app.should_quit);
+        assert!(!app.should_exit);
         assert!(app.intercept_slash_command("exit"));
-        assert!(app.should_quit);
+        assert!(app.should_exit);
     }
 
     #[test]

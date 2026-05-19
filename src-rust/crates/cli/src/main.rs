@@ -340,10 +340,29 @@ fn resolve_bridge_config(
     bridge_config.is_active().then_some(bridge_config)
 }
 
-// ---------------------------------------------------------------------------
-// Entry point
-// ---------------------------------------------------------------------------
+fn handle_exit_key(app: &mut claurst_tui::app::App, key: crossterm::event::KeyEvent, cancel: &Option<tokio_util::sync::CancellationToken>) -> bool {
+    if !key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL) {
+        return false;
+    }
 
+    match key.code {
+        crossterm::event::KeyCode::Char('c') => {
+            // Cancel background task first, then let app handle state cleanup
+            if app.is_streaming {
+                if let Some(ref ct) = cancel {
+                    ct.cancel();
+                }
+            }
+            app.handle_key_event(key);
+            true
+        }
+        crossterm::event::KeyCode::Char('d') => {
+            app.handle_key_event(key);
+            true
+        }
+        _ => false,
+    }
+}
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     // Fast-path: handle --version before parsing everything
@@ -1974,43 +1993,12 @@ async fn run_interactive(
                         continue;
                     }
 
-                    // Ctrl+C: copy selected text if there's a selection, otherwise cancel/quit
-                    if key.code == KeyCode::Char('c')
-                        && key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL)
-                    {
-                        // Check if there's an active text selection — copy instead of cancel/quit
-                        let has_selection = app.selection_anchor.is_some() && !app.selection_text.borrow().is_empty();
-                        if has_selection {
-                            // Let the app handle the copy via its normal key handler
-                            app.handle_key_event(key);
-                            continue;
-                        }
-
-                        // No selection — handle as cancel (if streaming) or
-                        // clear-prompt (if non-empty) or quit.
-                        if app.is_streaming {
-                            if let Some(ref ct) = cancel {
-                                ct.cancel();
-                            }
-                            app.is_streaming = false;
-                            app.status_message = Some("Cancelled.".to_string());
-                            continue;
-                        } else if !app.prompt_input.is_empty() {
-                            // Non-empty prompt — let the app clear it via Ctrl+C
-                            // handler instead of quitting (matches readline).
-                            app.handle_key_event(key);
-                            continue;
-                        } else {
+                    // Ctrl+C and Ctrl+D: exit confirmation handling
+                    if handle_exit_key(&mut app, key, &cancel) {
+                        if app.should_exit {
                             break 'main;
                         }
-                    }
-
-                    // Ctrl+D on empty input => quit
-                    if key.code == KeyCode::Char('d')
-                        && key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL)
-                        && app.prompt_input.is_empty()
-                    {
-                        break 'main;
+                        continue;
                     }
 
                     // Enter => submit input (but NOT when ANY dialog/overlay is open —
@@ -2124,7 +2112,7 @@ async fn run_interactive(
                             }
 
                             // Honour exit/quit triggered by TUI intercept immediately.
-                            if app.should_quit {
+                            if app.should_exit {
                                 break 'main;
                             }
 
@@ -3733,7 +3721,7 @@ async fn run_interactive(
             });
         }
 
-        if app.should_quit {
+        if app.should_exit {
             break 'main;
         }
     }

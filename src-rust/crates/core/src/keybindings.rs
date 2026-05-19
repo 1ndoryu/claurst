@@ -138,8 +138,8 @@ pub const NON_REBINDABLE: &[&str] = &["ctrl+c", "ctrl+d", "ctrl+m"];
 pub fn default_bindings() -> Vec<ParsedBinding> {
     let defaults: &[(&str, &str, KeyContext)] = &[
         // ========== GLOBAL CONTROL ==========
-        ("ctrl+c", "interrupt", KeyContext::Global),
-        ("ctrl+d", "exit", KeyContext::Global),
+        // ("ctrl+c", "interrupt", KeyContext::Global), // Handled directly in handle_key_event for two-press confirmation
+        // ("ctrl+d", "exit", KeyContext::Global), // Handled directly in handle_key_event for two-press confirmation
         ("ctrl+l", "redraw", KeyContext::Global),
         ("ctrl+r", "historySearch", KeyContext::Global),
         ("ctrl+b", "createBranch", KeyContext::Global),

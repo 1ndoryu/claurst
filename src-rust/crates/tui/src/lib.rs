@@ -504,10 +504,61 @@ mod tests {
     }
 
     #[test]
-    fn test_ctrl_c_quits_when_idle() {
+    fn test_ctrl_c_requires_two_presses_to_exit() {
         let mut app = make_app();
+        // First Ctrl+C: shows warning, doesn't exit
         app.handle_key_event(ctrl(KeyCode::Char('c')));
-        assert!(app.should_quit);
+        assert!(!app.should_exit);
+        assert!(app.last_exit_key_warning.is_some());
+
+        // Second Ctrl+C within 1 second: exits
+        app.handle_key_event(ctrl(KeyCode::Char('c')));
+        assert!(app.should_exit);
+    }
+
+    #[test]
+    fn test_ctrl_c_clears_input_first_press() {
+        let mut app = make_app();
+        app.set_prompt_text("some text".to_string());
+        // First Ctrl+C: clears input
+        app.handle_key_event(ctrl(KeyCode::Char('c')));
+        assert!(app.prompt_input.is_empty());
+        assert!(!app.should_exit);
+        assert!(app.last_exit_key_warning.is_some());
+    }
+
+    #[test]
+    fn test_other_key_resets_exit_warning() {
+        let mut app = make_app();
+        // First Ctrl+C: shows warning
+        app.handle_key_event(ctrl(KeyCode::Char('c')));
+        assert!(app.last_exit_key_warning.is_some());
+
+        // Press a different key: resets warning
+        app.handle_key_event(key(KeyCode::Char('a')));
+        assert!(app.last_exit_key_warning.is_none());
+
+        // Now Ctrl+C starts over (doesn't exit)
+        app.handle_key_event(ctrl(KeyCode::Char('c')));
+        assert!(!app.should_exit);
+        assert!(app.last_exit_key_warning.is_some());
+    }
+
+    #[test]
+    fn test_ctrl_c_timeout_resets_after_two_seconds() {
+        let mut app = make_app();
+        // First Ctrl+C: shows warning
+        app.handle_key_event(ctrl(KeyCode::Char('c')));
+        assert!(app.last_exit_key_warning.is_some());
+
+        // Manually expire the timer by setting it to >2 seconds ago
+        app.last_exit_key_warning = Some(std::time::Instant::now()
+            - std::time::Duration::from_millis(2100));
+
+        // Second Ctrl+C after timeout: should show warning again, not exit
+        app.handle_key_event(ctrl(KeyCode::Char('c')));
+        assert!(!app.should_exit);
+        assert!(app.last_exit_key_warning.is_some());
     }
 
     #[test]
@@ -517,15 +568,21 @@ mod tests {
         app.streaming_text = "partial".to_string();
         app.handle_key_event(ctrl(KeyCode::Char('c')));
         assert!(!app.is_streaming);
-        assert!(!app.should_quit);
+        assert!(!app.should_exit);
         assert!(app.streaming_text.is_empty());
     }
 
     #[test]
-    fn test_ctrl_d_quits_on_empty_input() {
+    fn test_ctrl_d_requires_two_presses_to_exit() {
         let mut app = make_app();
+        // First Ctrl+D: shows warning, doesn't exit
         app.handle_key_event(ctrl(KeyCode::Char('d')));
-        assert!(app.should_quit);
+        assert!(!app.should_exit);
+        assert!(app.last_exit_key_warning.is_some());
+
+        // Second Ctrl+D within 2 seconds: exits
+        app.handle_key_event(ctrl(KeyCode::Char('d')));
+        assert!(app.should_exit);
     }
 
     #[test]
@@ -533,7 +590,43 @@ mod tests {
         let mut app = make_app();
         app.set_prompt_text("abc".to_string());
         app.handle_key_event(ctrl(KeyCode::Char('d')));
-        assert!(!app.should_quit);
+        assert!(!app.should_exit);
+    }
+
+    #[test]
+    fn test_ctrl_c_then_ctrl_d_then_ctrl_c_exits() {
+        let mut app = make_app();
+        // First Ctrl+C: shows warning, sets start_key = 'c'
+        app.handle_key_event(ctrl(KeyCode::Char('c')));
+        assert!(!app.should_exit);
+        assert_eq!(app.exit_key_sequence_start, Some('c'));
+
+        // Ctrl+D (wrong key): resets timer but keeps waiting for Ctrl+C
+        app.handle_key_event(ctrl(KeyCode::Char('d')));
+        assert!(!app.should_exit);
+        assert_eq!(app.exit_key_sequence_start, Some('c')); // Still waiting for Ctrl+C
+
+        // Ctrl+C again: exits
+        app.handle_key_event(ctrl(KeyCode::Char('c')));
+        assert!(app.should_exit);
+    }
+
+    #[test]
+    fn test_ctrl_d_then_ctrl_c_then_ctrl_d_exits() {
+        let mut app = make_app();
+        // First Ctrl+D: shows warning, sets start_key = 'd'
+        app.handle_key_event(ctrl(KeyCode::Char('d')));
+        assert!(!app.should_exit);
+        assert_eq!(app.exit_key_sequence_start, Some('d'));
+
+        // Ctrl+C (wrong key): resets timer but keeps waiting for Ctrl+D
+        app.handle_key_event(ctrl(KeyCode::Char('c')));
+        assert!(!app.should_exit);
+        assert_eq!(app.exit_key_sequence_start, Some('d')); // Still waiting for Ctrl+D
+
+        // Ctrl+D again: exits
+        app.handle_key_event(ctrl(KeyCode::Char('d')));
+        assert!(app.should_exit);
     }
 
     #[test]
