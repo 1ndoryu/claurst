@@ -189,23 +189,6 @@ fn apply_block_style(mut line: Line<'static>, width: u16) -> Line<'static> {
 fn empty_block_line(width: u16) -> Line<'static> {
     apply_block_style(Line::from(""), width)
 }
-
-fn short_model_name(model: &str) -> String {
-    model
-        .split_once('/')
-        .map(|(_, model)| model)
-        .unwrap_or(model)
-        .to_string()
-}
-
-fn title_case_mode(mode: &str) -> String {
-    let mut chars = mode.chars();
-    match chars.next() {
-        Some(first) => format!("{}{}", first.to_uppercase(), chars.as_str()),
-        None => String::new(),
-    }
-}
-
 fn render_attachment_chip(kind: &str, label: String) -> Line<'static> {
     render_attachment_chip_colored(kind, label, CLAUDE_ORANGE, Color::Black)
 }
@@ -241,47 +224,24 @@ fn user_metadata_line(_meta: Option<&TurnMetadata>) -> Option<Line<'static>> {
 pub fn render_transcript_assistant_meta(meta: Option<&TurnMetadata>, accent: Color) -> Option<Line<'static>> {
     let meta = meta?;
 
-    // Always show at least mode — matches OpenCode's "Build · Model · Duration"
-    let mode = meta
-        .agent_mode
-        .as_deref()
-        .filter(|m| !m.is_empty())
-        .map(title_case_mode)
-        .unwrap_or_else(|| "Build".to_string());
+    // Only show interrupted status — mode, model, and duration are already
+    // displayed in the status line above the prompt.
+    if !meta.interrupted {
+        return None;
+    }
 
-    let mut spans = vec![
+    let spans = vec![
         Span::styled(
             "   \u{25a3} ",
             Style::default()
                 .fg(accent)
                 .add_modifier(Modifier::BOLD),
         ),
-        Span::styled(mode, Style::default().fg(TRANSCRIPT_TEXT)),
-    ];
-
-    if let Some(model) = meta.model_name.as_deref().filter(|m| !m.is_empty()) {
-        spans.push(Span::styled(" \u{00b7} ", Style::default().fg(TRANSCRIPT_SUBTLE)));
-        spans.push(Span::styled(
-            short_model_name(model),
-            Style::default().fg(TRANSCRIPT_MUTED),
-        ));
-    }
-
-    if let Some(duration) = meta.duration.as_deref().filter(|d| !d.is_empty()) {
-        spans.push(Span::styled(" \u{00b7} ", Style::default().fg(TRANSCRIPT_SUBTLE)));
-        spans.push(Span::styled(
-            duration.to_string(),
-            Style::default().fg(TRANSCRIPT_MUTED),
-        ));
-    }
-
-    if meta.interrupted {
-        spans.push(Span::styled(" \u{00b7} ", Style::default().fg(TRANSCRIPT_SUBTLE)));
-        spans.push(Span::styled(
+        Span::styled(
             "interrupted",
             Style::default().fg(TRANSCRIPT_MUTED),
-        ));
-    }
+        ),
+    ];
 
     Some(Line::from(spans))
 }
@@ -2679,6 +2639,3 @@ mod tests {
         assert_eq!(a_text, b_text);
     }
 }
-
-
-

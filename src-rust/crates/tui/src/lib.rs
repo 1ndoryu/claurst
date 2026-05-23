@@ -400,13 +400,13 @@ mod tests {
     fn test_stats_slash_command_opens_dialog_and_closes_other_views() {
         let mut app = make_app();
         app.mcp_view.open(vec![]);
-        app.agents_menu.open = true;
+        app.agents_menu.visible = true;
 
         assert!(app.intercept_slash_command("stats"));
-        assert!(app.stats_dialog.open);
-        assert!(!app.mcp_view.open);
-        assert!(!app.agents_menu.open);
-        assert!(!app.diff_viewer.open);
+        assert!(app.stats_dialog.visible);
+        assert!(!app.mcp_view.visible);
+        assert!(!app.agents_menu.visible);
+        assert!(!app.diff_viewer.visible);
     }
 
     #[test]
@@ -419,7 +419,7 @@ mod tests {
         ];
 
         assert!(app.intercept_slash_command("agents"));
-        assert!(app.agents_menu.open);
+        assert!(app.agents_menu.visible);
         assert_eq!(app.agents_menu.active_agents.len(), 3);
         assert_eq!(app.agents_menu.active_agents[0].status, AgentStatus::Running);
         assert_eq!(
@@ -479,7 +479,7 @@ mod tests {
         let mut app = make_app();
 
         assert!(app.intercept_slash_command("changes"));
-        assert!(app.diff_viewer.open);
+        assert!(app.diff_viewer.visible);
         assert_eq!(app.diff_viewer.diff_type, DiffType::TurnDiff);
     }
 
@@ -712,7 +712,7 @@ mod tests {
     fn test_ctrl_p_opens_global_search() {
         let mut app = make_app();
         app.handle_key_event(ctrl(KeyCode::Char('p')));
-        assert!(app.global_search.open);
+        assert!(app.global_search.visible);
     }
 
     #[test]
@@ -729,7 +729,7 @@ mod tests {
         }];
         app.handle_key_event(key(KeyCode::Enter));
 
-        assert!(!app.global_search.open);
+        assert!(!app.global_search.visible);
         assert_eq!(app.input, "src/main.rs:42");
         assert_eq!(app.prompt_input.text, "src/main.rs:42");
     }
@@ -959,7 +959,7 @@ mod tests {
     #[test]
     fn test_render_diff_dialog_shows_turn_empty_state() {
         let mut state = DiffViewerState::new();
-        state.open = true;
+        state.visible = true;
         state.diff_type = DiffType::TurnDiff;
         let area = Rect { x: 0, y: 0, width: 80, height: 20 };
         let mut buf = Buffer::empty(area);
@@ -997,13 +997,13 @@ mod tests {
     #[test]
     fn test_stats_dialog_keys_switch_tab_and_close() {
         let mut app = make_app();
-        app.stats_dialog.open = true;
+        app.stats_dialog.visible = true;
 
         app.handle_key_event(key(KeyCode::Right));
         assert_eq!(app.stats_dialog.tab, StatsTab::DailyTokens);
 
         app.handle_key_event(key(KeyCode::Esc));
-        assert!(!app.stats_dialog.open);
+        assert!(!app.stats_dialog.visible);
     }
 
     #[test]
@@ -1041,7 +1041,7 @@ mod tests {
         assert_eq!(app.mcp_view.tool_search, "");
 
         app.handle_key_event(key(KeyCode::Esc));
-        assert!(!app.mcp_view.open);
+        assert!(!app.mcp_view.visible);
     }
 
     #[test]
@@ -1106,7 +1106,7 @@ mod tests {
         assert!(!submit);
         assert_eq!(app.prompt_input.text, "");
         assert_eq!(app.take_pending_mcp_panel_auth().as_deref(), Some("mcphub"));
-        assert!(!app.mcp_view.open);
+        assert!(!app.mcp_view.visible);
         assert_eq!(app.mcp_view.tool_search, "");
     }
 
@@ -1117,7 +1117,7 @@ mod tests {
 
         let submit = app.handle_key_event(key(KeyCode::Char('a')));
         assert!(!submit);
-        assert!(app.mcp_view.open);
+        assert!(app.mcp_view.visible);
         assert_eq!(app.prompt_input.text, "");
         assert!(app.take_pending_mcp_panel_auth().is_none());
     }
@@ -1146,7 +1146,7 @@ mod tests {
 
         let submit = app.handle_key_event(key(KeyCode::Char('a')));
         assert!(!submit);
-        assert!(app.mcp_view.open);
+        assert!(app.mcp_view.visible);
         assert_eq!(app.mcp_view.tool_search, "a");
         assert!(app.take_pending_mcp_panel_auth().is_none());
     }

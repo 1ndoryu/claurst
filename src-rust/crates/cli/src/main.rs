@@ -445,7 +445,10 @@ async fn main() -> anyhow::Result<()> {
     let base_filter = EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| EnvFilter::new(log_level));
     let log_filter = base_filter
-        .add_directive("rmcp::service::client=error".parse().expect("valid rmcp directive"));
+        .add_directive("rmcp::service::client=error".parse().expect("valid rmcp directive"))
+        // Suppress error/warn logs from providers and query — errors are already shown as error modals
+        .add_directive("claurst_api::providers::free=off".parse().expect("valid directive"))
+        .add_directive("claurst_query=off".parse().expect("valid directive"));
     tracing_subscriber::fmt()
         .with_env_filter(log_filter)
         .with_target(false)
@@ -2008,38 +2011,7 @@ async fn run_interactive(
 
                     // Enter => submit input (but NOT when ANY dialog/overlay is open —
                     // dialogs handle their own Enter in handle_key_event).
-                    let any_dialog_open = app.connect_dialog.visible
-                        || app.import_config_picker.visible
-                        || app.import_config_dialog.visible
-                        || app.key_input_dialog.visible
-                        || app.custom_provider_dialog.visible
-                        || app.device_auth_dialog.visible
-                        || app.command_palette.visible
-                        || app.model_picker.visible
-                        || app.onboarding_dialog.visible
-                        || app.bypass_permissions_dialog.visible
-                        || app.file_injection_dialog.visible
-                        || app.ask_user_dialog.visible
-                        || app.settings_screen.visible
-                        || app.export_dialog.visible
-                        || app.theme_screen.visible
-                        || app.stats_dialog.open
-                        || app.invalid_config_dialog.visible
-                        || app.context_viz.visible
-                        || app.mcp_approval.visible
-                        || app.session_browser.visible
-                        || app.session_branching.visible
-                        || app.tasks_overlay.visible
-                        || app.mcp_view.open
-                        || app.agents_menu.open
-                        || app.diff_viewer.open
-                        || app.help_overlay.visible
-                        || app.history_search_overlay.visible
-                        || app.rewind_flow.visible
-                        || app.show_help
-                        || app.context_menu_state.is_some()
-                        || app.permission_request.is_some()
-                        || app.global_search.open;
+                    let any_dialog_open = app.any_modal_open();
                     if key.code == KeyCode::Enter && app.is_streaming && !any_dialog_open {
                         // Queue the message: it will auto-submit once the
                         // current turn finishes (issue #149).
@@ -3523,8 +3495,17 @@ async fn run_interactive(
 
         if task_finished {
             if let Some((handle, msgs_arc)) = current_query.take() {
-                // Get the outcome (ignore errors for now)
-                let _ = handle.await;
+                // Get the outcome and handle errors
+                if let Ok(QueryOutcome::Error(err)) = handle.await {
+                    while app.notifications.current_is_error() {
+                        app.notifications.dismiss_current();
+                    }
+                    app.notifications.push(
+                        claurst_tui::notifications::NotificationKind::Error,
+                        err.to_string(),
+                        None,
+                    );
+                }
                 // Sync the updated conversation back to our local vector
                 messages = msgs_arc.lock().await.clone();
                 session.messages = messages.clone();
@@ -3738,7 +3719,7 @@ async fn run_interactive(
             tool_ctx.mcp_manager = new_mcp_manager.clone();
             app.mcp_manager = new_mcp_manager.clone();
             tools_arc = build_tools_with_mcp(new_mcp_manager.clone());
-            if app.mcp_view.open {
+            if app.mcp_view.visible {
                 app.refresh_mcp_view();
             }
 

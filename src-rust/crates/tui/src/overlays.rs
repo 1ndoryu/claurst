@@ -1500,7 +1500,7 @@ fn kb_line<'a>(key: &str, desc: &str) -> Line<'a> {
 /// State for the global ripgrep search dialog.
 #[derive(Debug, Clone, Default)]
 pub struct GlobalSearchState {
-    pub open: bool,
+    pub visible: bool,
     pub query: String,
     pub results: Vec<SearchResult>,
     pub selected: usize,
@@ -1521,13 +1521,13 @@ pub struct SearchResult {
 
 impl GlobalSearchState {
     pub fn open(&mut self) {
-        self.open = true;
+        self.visible = true;
         self.query.clear();
         self.results.clear();
         self.selected = 0;
     }
 
-    pub fn close(&mut self) { self.open = false; }
+    pub fn close(&mut self) { self.visible = false; }
 
     pub fn select_prev(&mut self) {
         let count = self.results.len();
@@ -1625,7 +1625,7 @@ pub fn render_global_search(state: &GlobalSearchState, area: ratatui::layout::Re
     };
     use std::path::Path;
 
-    if !state.open { return; }
+    if !state.visible { return; }
 
     let w = (area.width * 4 / 5).max(40).min(area.width);
     let h = (area.height * 3 / 4).max(10).min(area.height);

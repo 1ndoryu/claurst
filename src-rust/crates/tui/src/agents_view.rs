@@ -227,7 +227,7 @@ pub enum AgentsRoute {
 /// Full state for the agents menu overlay.
 #[derive(Debug, Clone)]
 pub struct AgentsMenuState {
-    pub open: bool,
+    pub visible: bool,
     pub route: AgentsRoute,
     pub definitions: Vec<AgentDefinition>,
     pub active_agents: Vec<AgentInfo>,
@@ -240,7 +240,7 @@ pub struct AgentsMenuState {
 impl AgentsMenuState {
     pub fn new() -> Self {
         Self {
-            open: false,
+            visible: false,
             route: AgentsRoute::List,
             definitions: Vec::new(),
             active_agents: Vec::new(),
@@ -257,11 +257,11 @@ impl AgentsMenuState {
         self.list_scroll = 0;
         self.route = AgentsRoute::List;
         self.project_root = Some(project_root.to_path_buf());
-        self.open = true;
+        self.visible = true;
     }
 
     pub fn close(&mut self) {
-        self.open = false;
+        self.visible = false;
     }
 
     pub fn select_prev(&mut self) {
@@ -560,7 +560,7 @@ fn write_editor_to_disk(path: &Path, editor: &AgentEditorState) -> Result<(), St
 
 /// Render the agents menu overlay.
 pub fn render_agents_menu(state: &AgentsMenuState, area: Rect, buf: &mut Buffer) {
-    if !state.open {
+    if !state.visible {
         return;
     }
 

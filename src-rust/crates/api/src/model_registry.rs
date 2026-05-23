@@ -449,10 +449,21 @@ fn parse_snapshot_str(s: &str) -> Option<ParsedSnapshot> {
     parse_snapshot_bytes(s.as_bytes())
 }
 
+// models.dev uses "opencode" as the top-level key, but our provider config and
+// free-model detection expect "opencode-zen". Remap at parse time so a snapshot
+// refresh never silently breaks free-model detection again.
+fn remap_provider_id(id: &str) -> &str {
+    match id {
+        "opencode" => "opencode-zen",
+        other => other,
+    }
+}
+
 fn transform_api(api: md::ApiJson) -> ParsedSnapshot {
     let mut out = ParsedSnapshot::default();
 
-    for (provider_id, p) in api.into_iter() {
+    for (raw_provider_id, p) in api.into_iter() {
+        let provider_id = remap_provider_id(&raw_provider_id).to_string();
         let pid = ProviderId::new(provider_id.clone());
 
         out.providers.insert(provider_id.clone(), ProviderEntry {
@@ -1172,5 +1183,25 @@ mod tests {
         let anthropic = reg.provider("anthropic").expect("anthropic provider");
         assert_eq!(anthropic.name, "Anthropic");
         assert!(anthropic.env.iter().any(|e| e == "ANTHROPIC_API_KEY"));
+    }
+
+    #[test]
+    fn opencode_remapped_to_opencode_zen() {
+        // models.dev uses "opencode" as the top-level key; we must normalize it
+        // to "opencode-zen" so free-model detection works correctly.
+        let json = r#"{"opencode":{"id":"opencode","name":"OpenCode Zen","env":[],"models":{"qwen3.6-plus-free":{"id":"qwen3.6-plus-free","name":"Qwen 3.6 Plus Free","cost":{"input":0,"output":0},"limit":{"context":8192,"output":4096}}}}}"#;
+        let parsed = parse_snapshot_str(json).expect("parse must succeed");
+        assert!(
+            parsed.providers.contains_key("opencode-zen"),
+            "provider must be stored as opencode-zen"
+        );
+        assert!(
+            !parsed.providers.contains_key("opencode"),
+            "raw opencode key must not appear in registry"
+        );
+        assert!(
+            parsed.models.contains_key("opencode-zen/qwen3.6-plus-free"),
+            "model key must use opencode-zen prefix"
+        );
     }
 }

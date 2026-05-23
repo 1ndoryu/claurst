@@ -34,6 +34,8 @@ pub mod format_utils;
 pub mod crypto_utils;
 pub mod status_notices;
 pub mod auto_mode;
+pub mod spinner;
+pub use spinner::{SPINNER_VERBS, TURN_COMPLETION_VERBS, sample_spinner_verb, sample_completion_verb};
 
 // Remote session sync and cloud session API (T3-1, T3-2).
 pub mod remote_session;
@@ -1275,7 +1277,6 @@ pub mod config {
                 _ => crate::constants::DEFAULT_MODEL, // Anthropic default
             }
         }
-
 
 
         /// Resolve the effective max-tokens.
@@ -3215,8 +3216,36 @@ pub mod cost {
     use std::sync::atomic::{AtomicU64, Ordering};
     use std::sync::Arc;
 
+    /// Free upstream provider IDs used in the free provider system.
+    ///
+    /// These overlap with providers that appear in `api_key_env_vars_for_provider`.
+    /// When adding a provider to one, check whether it also belongs in the other.
+    const FREE_UPSTREAM_IDS: &[&str] = &[
+        "groq",
+        "cerebras",
+        "google",
+        "mistral",
+        "sambanova",
+        "nvidia",
+        "cohere",
+        "openrouter",
+        "opencode-zen",
+        "zai",
+        "zhipuai",
+    ];
+
+    /// Check if a model name is an upstream-prefixed free model (e.g., "groq/llama-3.3-70b-versatile").
+    fn is_free_upstream_model(model: &str) -> bool {
+        for upstream_id in FREE_UPSTREAM_IDS {
+            if model.starts_with(&format!("{}/", upstream_id)) {
+                return true;
+            }
+        }
+        false
+    }
+
     /// Per-model pricing tiers (USD per million tokens).
-    #[derive(Debug, Clone, Copy)]
+    #[derive(Debug, Clone, Copy, PartialEq)]
     pub struct ModelPricing {
         pub input_per_mtk: f64,
         pub output_per_mtk: f64,
@@ -3249,6 +3278,14 @@ pub mod cost {
             cache_read_per_mtk: 0.08,
         };
 
+        /// Free model pricing (no cost).
+        pub const FREE: Self = Self {
+            input_per_mtk: 0.0,
+            output_per_mtk: 0.0,
+            cache_creation_per_mtk: 0.0,
+            cache_read_per_mtk: 0.0,
+        };
+
         /// Default pricing is Opus (most capable, highest cost).
         pub fn default_pricing() -> Self {
             Self::OPUS
@@ -3256,7 +3293,12 @@ pub mod cost {
 
         /// Pick pricing based on model name substring matching.
         pub fn for_model(model: &str) -> Self {
-            if model.contains("opus") {
+            // Check for free models first (those with "-free" suffix, "free/" prefix, or upstream-prefixed free model)
+            if model.ends_with("-free") || model.starts_with("free/") {
+                Self::FREE
+            } else if is_free_upstream_model(model) {
+                Self::FREE
+            } else if model.contains("opus") {
                 Self::OPUS
             } else if model.contains("haiku") {
                 Self::HAIKU
@@ -3359,7 +3401,9 @@ pub mod cost {
         pub fn summary(&self) -> String {
             let cost = self.total_cost_usd();
             let total = self.total_tokens();
-            if cost < 0.01 {
+            if cost == 0.0 {
+                format!("{} tokens ($0.00)", total)
+            } else if cost < 0.01 {
                 format!("{} tokens (<$0.01)", total)
             } else {
                 format!("{} tokens (${:.2})", total, cost)
@@ -4341,6 +4385,43 @@ mod tests {
         assert_eq!(tracker.input_tokens(), 0);
         assert_eq!(tracker.output_tokens(), 0);
         assert_eq!(tracker.total_cost_usd(), 0.0);
+    }
+
+    #[test]
+    fn test_cost_tracker_free_model() {
+        let tracker = CostTracker::with_model("deepseek-v4-flash-free");
+        tracker.add_usage(1000, 500, 200, 100);
+        // Free models should have zero cost even with token usage
+        assert_eq!(tracker.total_cost_usd(), 0.0);
+    }
+
+    #[test]
+    fn test_model_pricing_free_variants() {
+        // Test that models ending with -free use FREE pricing
+        assert_eq!(cost::ModelPricing::for_model("deepseek-v4-flash-free"), cost::ModelPricing::FREE);
+        assert_eq!(cost::ModelPricing::for_model("zen/minimax-m2.5-free"), cost::ModelPricing::FREE);
+
+        // Test that models starting with free/ use FREE pricing
+        assert_eq!(cost::ModelPricing::for_model("free/auto"), cost::ModelPricing::FREE);
+        assert_eq!(cost::ModelPricing::for_model("free/some-model"), cost::ModelPricing::FREE);
+
+        // Test that upstream-prefixed free models use FREE pricing
+        assert_eq!(cost::ModelPricing::for_model("groq/llama-3.3-70b-versatile"), cost::ModelPricing::FREE);
+        assert_eq!(cost::ModelPricing::for_model("cerebras/qwen-3-235b-a22b-instruct-2507"), cost::ModelPricing::FREE);
+        assert_eq!(cost::ModelPricing::for_model("google/gemini-2.5-flash"), cost::ModelPricing::FREE);
+        assert_eq!(cost::ModelPricing::for_model("mistral/mistral-large-latest"), cost::ModelPricing::FREE);
+        assert_eq!(cost::ModelPricing::for_model("sambanova/Meta-Llama-3.3-70B-Instruct"), cost::ModelPricing::FREE);
+        assert_eq!(cost::ModelPricing::for_model("nvidia/meta/llama-3.3-70b-instruct"), cost::ModelPricing::FREE);
+        assert_eq!(cost::ModelPricing::for_model("cohere/command-r-plus"), cost::ModelPricing::FREE);
+        assert_eq!(cost::ModelPricing::for_model("openrouter/free"), cost::ModelPricing::FREE);
+        assert_eq!(cost::ModelPricing::for_model("opencode-zen/minimax-m2.5-free"), cost::ModelPricing::FREE);
+        assert_eq!(cost::ModelPricing::for_model("zai/glm-4.6"), cost::ModelPricing::FREE);
+        assert_eq!(cost::ModelPricing::for_model("zhipuai/glm-4.5"), cost::ModelPricing::FREE);
+
+        // Test that other models use their appropriate pricing
+        assert_eq!(cost::ModelPricing::for_model("claude-opus"), cost::ModelPricing::OPUS);
+        assert_eq!(cost::ModelPricing::for_model("claude-haiku"), cost::ModelPricing::HAIKU);
+        assert_eq!(cost::ModelPricing::for_model("claude-sonnet"), cost::ModelPricing::SONNET);
     }
 
     #[test]

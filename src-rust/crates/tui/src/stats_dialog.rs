@@ -163,7 +163,7 @@ pub enum StatsTab {
 
 #[derive(Debug, Clone)]
 pub struct StatsDialogState {
-    pub open: bool,
+    pub visible: bool,
     pub tab: StatsTab,
     pub range_days: u32,  // 7, 30, or 0 = all
     pub data: Option<AggregatedStats>,
@@ -179,7 +179,7 @@ pub struct StatsDialogState {
 impl StatsDialogState {
     pub fn new() -> Self {
         Self {
-            open: false,
+            visible: false,
             tab: StatsTab::Overview,
             range_days: 30,
             data: None,
@@ -197,11 +197,11 @@ impl StatsDialogState {
         self.current_streak_days = current;
         self.longest_streak_days = longest;
         self.data = Some(stats);
-        self.open = true;
+        self.visible = true;
         self.scroll = 0;
     }
 
-    pub fn close(&mut self) { self.open = false; }
+    pub fn close(&mut self) { self.visible = false; }
 
     pub fn next_tab(&mut self) {
         self.tab = match self.tab {
@@ -349,7 +349,7 @@ fn date_to_days_since_epoch(date: &str) -> Option<u64> {
 
 /// Render the stats dialog overlay.
 pub fn render_stats_dialog(state: &StatsDialogState, area: Rect, buf: &mut Buffer) {
-    if !state.open { return; }
+    if !state.visible { return; }
 
     let layout = begin_modal_buf(buf, area, 92, 30, 2, 1);
     render_modal_title_buf(buf, layout.header_area, "Cost & stats", "esc");

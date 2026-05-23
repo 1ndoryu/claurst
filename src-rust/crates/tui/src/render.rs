@@ -39,7 +39,7 @@ use crate::messages::{
     render_thinking_live_content,
     RenderContext,
 };
-use crate::notifications::render_notification_banner;
+use crate::notifications::{render_notification_banner, Notification, NotificationKind};
 use crate::overlays::{
     render_global_search, render_help_overlay, render_history_search_overlay, render_rewind_flow,
     CLAURST_ACCENT,
@@ -71,7 +71,9 @@ const SPINNER: &[char] = &['\u{00b7}', '\u{2722}', '*', '\u{2736}', '\u{273b}', 
 const SPINNER: &[char] = &['\u{00b7}', '\u{2722}', '\u{2733}', '\u{2736}', '\u{273b}', '\u{273d}',
                             '\u{273d}', '\u{273b}', '\u{2736}', '\u{2733}', '\u{2722}', '\u{00b7}'];
 const CLAUDE_ORANGE: Color = Color::Rgb(233, 30, 99);
-const WELCOME_BOX_HEIGHT: u16 = 12;
+const WELCOME_BOX_HEIGHT: u16 = 9;
+const STATUS_THINKING: &str = "thinking";
+const STATUS_THINKING_ELLIPSIS: &str = "thinking\u{2026}";
 
 fn spinner_char(frame_count: u64) -> char {
     SPINNER[(frame_count as usize) % SPINNER.len()]
@@ -89,47 +91,92 @@ fn spinner_color(app: &App) -> Color {
 }
 
 fn is_modal_open(app: &App) -> bool {
-    app.permission_request.is_some()
-        || app.rewind_flow.visible
-        || app.tasks_overlay.visible
-        || app.help_overlay.visible
-        || app.show_help
-        || app.history_search_overlay.visible
-        || app.history_search.is_some()
-        || app.settings_screen.visible
-        || app.theme_screen.visible
-        || app.stats_dialog.open
-        || app.mcp_view.open
-        || app.agents_menu.open
-        || app.diff_viewer.open
-        || app.global_search.open
-        || app.feedback_survey.visible
-        || app.memory_file_selector.visible
-        || app.hooks_config_menu.visible
-        || app.overage_upsell.visible
-        || app.voice_mode_notice.visible
-        || app.memory_update_notification.visible
-        || app.desktop_upsell.visible
-        || app.import_config_dialog.visible
-        || app.invalid_config_dialog.visible
-        || app.bypass_permissions_dialog.visible
-        || app.ask_user_dialog.visible
-        || app.onboarding_dialog.visible
-        || app.import_config_picker.visible
-        || app.import_config_dialog.visible
-        || app.connect_dialog.visible
-        || app.key_input_dialog.visible
-        || app.custom_provider_dialog.visible
-        || app.free_mode_dialog.visible
-        || app.device_auth_dialog.visible
-        || app.command_palette.visible
-        || app.elicitation.visible
-        || app.model_picker.visible
-        || app.session_browser.visible
-        || app.session_branching.visible
-        || app.export_dialog.visible
-        || app.context_viz.visible
-        || app.mcp_approval.visible
+    app.any_modal_open()
+}
+
+// -----------------------------------------------------------------------
+// Error modal rendering
+// -----------------------------------------------------------------------
+
+/// Render an error modal dialog with wrapped content.
+fn render_error_modal(frame: &mut Frame, area: Rect, notification: &Notification, _scroll_offset: usize, footer_area: Rect, is_welcome_screen: bool) {
+    // When the footer anchor is inside the welcome box (y < WELCOME_BOX_HEIGHT), or explicitly on
+    // the welcome screen, center the modal so it doesn't awkwardly overlap the welcome box.
+    let anchored_in_welcome_box = footer_area.width > 0 && footer_area.y < WELCOME_BOX_HEIGHT;
+    let modal_area = if is_welcome_screen || anchored_in_welcome_box {
+        let modal_width = (area.width * 2 / 3).max(40).min(area.width);
+        let modal_height = (area.height / 3).max(8).min(area.height.saturating_sub(2));
+        Rect {
+            x: area.x + (area.width.saturating_sub(modal_width)) / 2,
+            y: area.y + (area.height.saturating_sub(modal_height)) / 2,
+            width: modal_width,
+            height: modal_height,
+        }
+    } else if footer_area.width > 0 {
+        let desired_height = (area.height / 3).max(8)
+            .min(area.height.saturating_sub(footer_area.y));
+        Rect {
+            x: footer_area.x,
+            y: footer_area.y,
+            width: footer_area.width,
+            height: desired_height,
+        }
+    } else {
+        let modal_width = area.width / 2;
+        let modal_height = area.height.saturating_sub(4);
+        Rect {
+            x: area.x + modal_width,
+            y: area.y,
+            width: modal_width,
+            height: modal_height,
+        }
+    };
+
+    frame.render_widget(Clear, modal_area);
+
+    let modal_block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(ratatui::widgets::BorderType::Rounded)
+        .style(Style::default().fg(Color::Red));
+    frame.render_widget(modal_block, modal_area);
+
+    let header_bg_area = Rect {
+        x: modal_area.x + 1,
+        y: modal_area.y + 1,
+        width: modal_area.width.saturating_sub(2),
+        height: 1,
+    };
+    let header_style = Style::default().bg(Color::Rgb(60, 15, 15)).fg(Color::Red);
+    let header_para = Paragraph::new("  ⚠ Error  ")
+        .style(header_style.add_modifier(Modifier::BOLD));
+    frame.render_widget(header_para, header_bg_area);
+
+    let sep_area = Rect {
+        x: modal_area.x + 1,
+        y: modal_area.y + 2,
+        width: modal_area.width.saturating_sub(2),
+        height: 1,
+    };
+    let sep_line = Paragraph::new(Line::from(Span::styled(
+        "─".repeat(sep_area.width as usize),
+        Style::default().fg(Color::Rgb(80, 20, 20)),
+    )));
+    frame.render_widget(sep_line, sep_area);
+
+    // Chrome: border(1) + header(1) + sep(1) + blank(1) + border(1) = 5 rows
+    let body_start_y = modal_area.y + 4;
+    let body_height = modal_area.height.saturating_sub(5).max(1);
+    let body_area = Rect {
+        x: modal_area.x + 2,
+        y: body_start_y,
+        width: modal_area.width.saturating_sub(4),
+        height: body_height,
+    };
+
+    let body_para = Paragraph::new(notification.message.as_str())
+        .style(Style::default().fg(Color::Rgb(220, 220, 220)))
+        .wrap(Wrap { trim: true });
+    frame.render_widget(body_para, body_area);
 }
 
 // -----------------------------------------------------------------------
@@ -382,7 +429,7 @@ pub fn render_app(frame: &mut Frame, app: &App) {
     );
 
     let prompt_focused =
-        !app.is_streaming && app.permission_request.is_none() && !app.history_search_overlay.visible;
+        app.permission_request.is_none() && !app.history_search_overlay.visible;
     // Suggestions popup tracks whether the prompt accepts input, not whether
     // it is the focused widget. Text entry is allowed during streaming so the
     // user can queue the next message, so the typeahead popup must follow
@@ -429,7 +476,7 @@ pub fn render_app(frame: &mut Frame, app: &App) {
             Constraint::Length(status_height),
             Constraint::Length(prompt_height),
             Constraint::Length(suggestions_height),
-            Constraint::Length(1),
+            Constraint::Length(2),
         ])
         .split(size);
 
@@ -493,24 +540,24 @@ pub fn render_app(frame: &mut Frame, app: &App) {
         render_theme_screen(frame, &app.theme_screen, size);
     }
 
-    if app.stats_dialog.open {
+    if app.stats_dialog.visible {
         render_stats_dialog(&app.stats_dialog, size, frame.buffer_mut());
     }
 
-    if app.mcp_view.open {
+    if app.mcp_view.visible {
         render_mcp_view(&app.mcp_view, size, frame.buffer_mut());
     }
 
-    if app.agents_menu.open {
+    if app.agents_menu.visible {
         render_agents_menu(&app.agents_menu, size, frame.buffer_mut());
     }
 
-    if app.diff_viewer.open {
+    if app.diff_viewer.visible {
         let mut state = app.diff_viewer.clone();
         render_diff_dialog(&mut state, size, frame.buffer_mut());
     }
 
-    if app.global_search.open {
+    if app.global_search.visible {
         render_global_search(&app.global_search, size, frame.buffer_mut());
     }
 
@@ -679,10 +726,22 @@ pub fn render_app(frame: &mut Frame, app: &App) {
         render_mcp_approval_dialog(&app.mcp_approval, size, frame.buffer_mut());
     }
 
+    // Always show error modals on top of everything (highest priority)
+    if let Some(notif) = app.notifications.current() {
+        if notif.kind == NotificationKind::Error {
+            let is_welcome_screen = app.messages.is_empty()
+                && app.streaming_text.is_empty()
+                && app.streaming_thinking.is_empty()
+                && app.tool_use_blocks.is_empty();
+            render_error_modal(frame, size, notif, app.error_modal_scroll_offset, app.footer_right_column_area.get(), is_welcome_screen);
+            return; // Don't render other overlays/notifications when error modal is showing
+        }
+    }
+
     let modal_active = is_modal_open(app);
 
-    // Notification banner stays out of the way when a modal owns the screen.
-    if !modal_active && !app.notifications.is_empty() {
+    // Render non-error notifications as toast banners (unless another modal is open)
+    if !modal_active && app.notifications.current().is_some() {
         render_notification_banner(frame, &app.notifications, size);
     }
 
@@ -970,7 +1029,7 @@ fn render_messages(frame: &mut Frame, app: &App, area: Rect) {
     let lines = render_message_items(app, msg_area.width);
 
     // Highlight search matches in transcript when global search is active
-    let lines = if app.global_search.open && !app.global_search.query.is_empty() {
+    let lines = if app.global_search.visible && !app.global_search.query.is_empty() {
         let query_lc = app.global_search.query.to_lowercase();
         lines.into_iter().map(|mut item| {
             if item.search_text.to_lowercase().contains(query_lc.as_str()) {
@@ -1394,26 +1453,10 @@ fn render_message_items(app: &App, width: u16) -> Vec<RenderedLineItem> {
 
 /// Render the two-column orange round-bordered welcome box (matches TS LogoV2).
 fn render_welcome_box(frame: &mut Frame, app: &App, area: Rect) {
-    // Shorten cwd: replace $USERPROFILE/$HOME prefix with ~
-    let cwd = std::env::current_dir()
-        .ok()
-        .and_then(|p| {
-            let home = std::env::var("USERPROFILE")
-                .or_else(|_| std::env::var("HOME"))
-                .ok();
-            if let Some(h) = home {
-                let hs = p.display().to_string();
-                if hs.starts_with(&h) {
-                    return Some(format!("~{}", &hs[h.len()..]));
-                }
-            }
-            Some(p.display().to_string())
-        })
-        .unwrap_or_else(|| ".".to_string());
 
     // --- Box dimensions ---
     // The box should be at most the full area width, and a fixed height.
-    let box_width = area.width.min(area.width);
+    let box_width = area.width;
     let box_height: u16 = WELCOME_BOX_HEIGHT;
     if area.height < box_height || box_width < 30 {
         // Too small: fall back to a single line
@@ -1459,6 +1502,9 @@ fn render_welcome_box(frame: &mut Frame, app: &App, area: Rect) {
         ])
         .split(inner);
 
+    // Store the right column area for error modal positioning
+    app.footer_right_column_area.set(h_chunks[2]);
+
     // Draw vertical divider in accent color
     let divider_lines: Vec<Line> = (0..inner.height)
         .map(|_| Line::from(Span::styled("\u{2502}", Style::default().fg(accent))))
@@ -1490,28 +1536,6 @@ fn render_welcome_box(frame: &mut Frame, app: &App, area: Rect) {
         spans.extend(cl.spans.iter().cloned());
         left_lines.push(Line::from(spans));
     }
-    left_lines.push(Line::from(""));
-    // Only show model line if credentials are configured
-    if app.has_credentials {
-        let model_display = if let Some((provider, model)) = app.model_name.split_once('/') {
-            if provider == "anthropic" {
-                model.to_string()
-            } else {
-                format!("{} [{}]", model, provider)
-            }
-        } else {
-            app.model_name.clone()
-        };
-        left_lines.push(Line::from(Span::styled(
-            format!("{} \u{00b7} API Usage", model_display),
-            Style::default().fg(Color::DarkGray),
-        )));
-    }
-    left_lines.push(Line::from(Span::styled(
-        cwd,
-        Style::default().fg(Color::DarkGray),
-    )));
-
     frame.render_widget(Paragraph::new(left_lines).wrap(Wrap { trim: false }), h_chunks[0]);
 
     // --- Right column ---
@@ -1805,15 +1829,29 @@ fn render_input(frame: &mut Frame, app: &App, area: Rect, focused: bool) {
         // `?` opens the shortcuts overlay which already lists Ctrl+A / Ctrl+K
         // and friends — surfacing them again here is redundant clutter.
         let right_hint = if app.has_credentials {
-            Line::from(vec![Span::styled("? shortcuts", Style::default().fg(dim))])
+            Line::from(vec![
+                Span::styled("? shortcuts", Style::default().fg(dim)),
+            ])
         } else {
             Line::from(Vec::<Span>::new())
         };
 
-        frame.render_widget(Paragraph::new(vec![left_line]), chunks[0]);
+        let left_padded = Rect {
+            x: chunks[0].x + 1,
+            y: chunks[0].y,
+            width: chunks[0].width.saturating_sub(1),
+            height: chunks[0].height,
+        };
+        let right_padded = Rect {
+            x: chunks[1].x,
+            y: chunks[1].y,
+            width: chunks[1].width.saturating_sub(1),
+            height: chunks[1].height,
+        };
+        frame.render_widget(Paragraph::new(vec![left_line]), left_padded);
         frame.render_widget(
             Paragraph::new(vec![right_hint]).alignment(Alignment::Right),
-            chunks[1],
+            right_padded,
         );
     }
 
@@ -1841,8 +1879,8 @@ fn should_render_status_row(app: &App) -> bool {
         .map(|status| {
             let trimmed = status.trim();
             !trimmed.is_empty()
-                && !trimmed.eq_ignore_ascii_case("thinking")
-                && !trimmed.eq_ignore_ascii_case("thinking…")
+                && !trimmed.eq_ignore_ascii_case(STATUS_THINKING)
+                && !trimmed.eq_ignore_ascii_case(STATUS_THINKING_ELLIPSIS)
         })
         .unwrap_or(false);
 
@@ -1870,8 +1908,8 @@ fn render_status_row(frame: &mut Frame, app: &App, area: Rect) {
             .filter(|s| {
                 let t = s.trim();
                 !t.is_empty()
-                    && !t.eq_ignore_ascii_case("thinking")
-                    && !t.eq_ignore_ascii_case("thinking…")
+                    && !t.eq_ignore_ascii_case(STATUS_THINKING)
+                    && !t.eq_ignore_ascii_case(STATUS_THINKING_ELLIPSIS)
             })
             .or_else(|| app.spinner_verb.as_deref())
             .unwrap_or("Thinking");
@@ -1961,6 +1999,14 @@ fn render_footer(frame: &mut Frame, app: &App, area: Rect) {
     if area.height == 0 {
         return;
     }
+
+    // Use only the first line of the footer area, leaving bottom padding
+    let footer_area = Rect {
+        x: area.x,
+        y: area.y,
+        width: area.width,
+        height: 1,
+    };
 
     // Left side: ordered pills — voice > PR badge > background task > vim > hint
     let left_spans: Vec<Span> = if app.voice_recording {
@@ -2156,7 +2202,8 @@ fn render_footer(frame: &mut Frame, app: &App, area: Rect) {
         }
 
         // 3. Cost — mirrors TS formatCost: 4 decimal places for costs < $0.50, else 2.
-        if app.cost_usd > 0.0 {
+        // Display cost if it's >= 0.0, so free models show $0.00
+        if app.cost_usd >= 0.0 {
             if !parts.is_empty() {
                 parts.push(Span::raw("  "));
             }
@@ -2348,13 +2395,20 @@ fn render_footer(frame: &mut Frame, app: &App, area: Rect) {
         .iter()
         .map(|s| UnicodeWidthStr::width(s.content.as_ref()))
         .sum();
-    let gap = (area.width as usize).saturating_sub(left_len + right_len);
+    let gap = (footer_area.width.saturating_sub(2) as usize).saturating_sub(left_len + right_len);
 
     let mut spans = left_spans;
     spans.push(Span::raw(" ".repeat(gap)));
     spans.extend(right_spans);
 
-    frame.render_widget(Paragraph::new(vec![Line::from(spans)]), area);
+    // Add padding: 1 char on each side
+    let padded_area = Rect {
+        x: footer_area.x + 1,
+        y: footer_area.y,
+        width: footer_area.width.saturating_sub(2),
+        height: footer_area.height,
+    };
+    frame.render_widget(Paragraph::new(vec![Line::from(spans)]), padded_area);
 }
 
 fn render_prompt_suggestions(frame: &mut Frame, app: &App, area: Rect) {

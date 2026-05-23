@@ -689,6 +689,8 @@ const MAX_TOKENS_RECOVERY_MSG: &str =
      you were doing. Pick up mid-thought if that is where the cut happened. \
      Break remaining work into smaller pieces.";
 
+// Spinner verbs are imported from claurst_core::spinner
+
 /// Run the agentic query loop.
 ///
 /// This sends the conversation to the API, handles tool calls in a loop, and
@@ -1055,9 +1057,12 @@ pub async fn run_query_loop(
                 if let Some(provider) = provider {
                     debug!(provider = %provider_id_str, model = %model_id_str, "Dispatching to non-Anthropic provider");
 
-                    // Notify TUI that we're calling the provider
+                    // Notify TUI that we're calling the provider using a random spinner verb
                     if let Some(ref tx) = event_tx {
-                        let _ = tx.send(QueryEvent::Status(format!("Calling {} ({})…", provider.name(), model_id_str)));
+                        use claurst_core::sample_spinner_verb;
+                        let seed = (provider_id_str.len() ^ model_id_str.len()) as usize;
+                        let verb = sample_spinner_verb(seed);
+                        let _ = tx.send(QueryEvent::Status(format!("✳ {}…", verb)));
                     }
 
                     // Build ProviderRequest from the already-assembled request data.
