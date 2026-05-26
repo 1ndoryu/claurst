@@ -51,6 +51,11 @@ struct ReviewableChange {
 }
 
 pub fn maybe_spawn_auto_review(tool_ctx: &ToolContext, config: &QueryConfig) {
+    if !tool_ctx.config.auto_review_enabled() {
+        debug!("Auto-review skipped: disabled by config");
+        return;
+    }
+
     let Some(notifier) = tool_ctx.completion_notifier.clone() else {
         debug!("Auto-review skipped: no completion notifier wired");
         return;
@@ -173,11 +178,7 @@ fn review_query_config(
     config: &QueryConfig,
     area: &ReviewArea,
 ) -> QueryConfig {
-    let model = config
-        .agent_definition
-        .as_ref()
-        .and_then(|agent| agent.model.clone())
-        .unwrap_or_else(|| config.model.clone());
+    let model = tool_ctx.config.effective_subagent_model().to_string();
 
     QueryConfig {
         model,
@@ -198,7 +199,7 @@ fn review_query_config(
         command_queue: None,
         skill_index: None,
         max_budget_usd: config.max_budget_usd,
-        fallback_model: config.fallback_model.clone(),
+        fallback_model: None,
         provider_registry: config.provider_registry.clone(),
         agent_name: Some(format!("auto-review-{}", area.id)),
         agent_definition: None,

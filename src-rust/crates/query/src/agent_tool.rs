@@ -110,7 +110,7 @@ fn resolve_subagent_model(params: &AgentInput, ctx: &ToolContext) -> String {
                 .map(|c| c.executor_model.clone())
                 .filter(|m| !m.is_empty())
         })
-        .unwrap_or_else(|| ctx.config.effective_model().to_string());
+        .unwrap_or_else(|| ctx.config.effective_subagent_model().to_string());
 
     if base_model.contains('/') {
         base_model

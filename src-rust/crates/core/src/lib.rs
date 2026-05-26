@@ -994,6 +994,22 @@ pub mod config {
         /// Managed agent (manager-executor) configuration.
         #[serde(default)]
         pub managed_agents: Option<ManagedAgentConfig>,
+        /// Whether automatic end-of-turn code review is enabled.
+        /// `None` defaults to enabled.
+        #[serde(
+            default,
+            rename = "autoReviewEnabled",
+            skip_serializing_if = "Option::is_none"
+        )]
+        pub auto_review_enabled: Option<bool>,
+        /// Model used for background subagents such as auto-review and AutoDream.
+        /// Defaults to `freellmapi/auto`.
+        #[serde(
+            default,
+            rename = "subagentModel",
+            skip_serializing_if = "Option::is_none"
+        )]
+        pub subagent_model: Option<String>,
         /// Shadow-git auto-commit snapshot system.  `Some(true)` = enabled.  `None` or `Some(false)` = disabled (default).
         /// Set via `--auto-commits` flag or `"autoCommits": true` in settings.json.
         #[serde(
@@ -1326,6 +1342,16 @@ pub mod config {
                 Some("venice") => "llama-3.3-70b",
                 _ => crate::constants::DEFAULT_MODEL, // Anthropic default
             }
+        }
+
+        pub fn auto_review_enabled(&self) -> bool {
+            self.auto_review_enabled.unwrap_or(true)
+        }
+
+        pub fn effective_subagent_model(&self) -> &str {
+            self.subagent_model
+                .as_deref()
+                .unwrap_or(crate::constants::DEFAULT_SUBAGENT_MODEL)
         }
 
         /// Resolve the effective max-tokens.
@@ -1795,6 +1821,11 @@ pub mod config {
                     SkillsConfig { paths, urls }
                 },
                 managed_agents: over.config.managed_agents.or(base.config.managed_agents),
+                auto_review_enabled: over
+                    .config
+                    .auto_review_enabled
+                    .or(base.config.auto_review_enabled),
+                subagent_model: over.config.subagent_model.or(base.config.subagent_model),
                 auto_commits: over.config.auto_commits.or(base.config.auto_commits),
                 cursor_blink_enabled: over.config.cursor_blink_enabled
                     || base.config.cursor_blink_enabled,
@@ -1974,6 +2005,7 @@ pub mod constants {
 
     // Models
     pub const DEFAULT_MODEL: &str = "claude-opus-4-6";
+    pub const DEFAULT_SUBAGENT_MODEL: &str = "freellmapi/auto";
     pub const SONNET_MODEL: &str = "claude-sonnet-4-6";
     pub const HAIKU_MODEL: &str = "claude-haiku-4-5-20251001";
     pub const OPUS_MODEL: &str = "claude-opus-4-6";
@@ -4276,6 +4308,35 @@ mod tests {
         let mut cfg = crate::config::Config::default();
         cfg.model = Some("claude-haiku-4-5-20251001".to_string());
         assert_eq!(cfg.effective_model(), "claude-haiku-4-5-20251001");
+    }
+
+    #[test]
+    fn test_config_auto_review_enabled_default() {
+        let cfg = crate::config::Config::default();
+        assert!(cfg.auto_review_enabled());
+    }
+
+    #[test]
+    fn test_config_auto_review_enabled_override() {
+        let mut cfg = crate::config::Config::default();
+        cfg.auto_review_enabled = Some(false);
+        assert!(!cfg.auto_review_enabled());
+    }
+
+    #[test]
+    fn test_config_effective_subagent_model_default() {
+        let cfg = crate::config::Config::default();
+        assert_eq!(
+            cfg.effective_subagent_model(),
+            crate::constants::DEFAULT_SUBAGENT_MODEL
+        );
+    }
+
+    #[test]
+    fn test_config_effective_subagent_model_override() {
+        let mut cfg = crate::config::Config::default();
+        cfg.subagent_model = Some("freellmapi/reviewer-fast".to_string());
+        assert_eq!(cfg.effective_subagent_model(), "freellmapi/reviewer-fast");
     }
 
     #[test]

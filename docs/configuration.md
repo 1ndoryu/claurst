@@ -95,6 +95,13 @@ See [Permission Modes](#permission-modes) for a full description of each value.
 | `auto_compact` | boolean | true | Automatically compact the conversation context when the context window nears capacity. |
 | `compact_threshold` | float | 0.85 | Fraction of the context window that triggers auto-compaction (0.0–1.0). |
 
+### Background automation
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `autoReviewEnabled` | boolean | true | Run read-only background code-review agents after a turn when Claurst detected meaningful code changes. Findings are injected back into the main conversation automatically. Set to `false` to disable the feature. |
+| `subagentModel` | string \| null | `"freellmapi/auto"` | Default model for background and delegated subagents, including auto-review and AutoDream. Prefer the full `provider/model` form for deterministic routing. |
+
 ### System prompt
 
 | Key | Type | Default | Description |

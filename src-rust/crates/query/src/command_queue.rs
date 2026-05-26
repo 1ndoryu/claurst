@@ -131,6 +131,15 @@ impl CommandQueue {
     pub fn is_empty(&self) -> bool {
         self.0.lock().unwrap().is_empty()
     }
+
+    pub fn has_injected_messages(&self) -> bool {
+        self.0.lock().unwrap().iter().any(|entry| {
+            matches!(
+                entry.command,
+                QueuedCommand::InjectUserMessage(_) | QueuedCommand::InjectSystemMessage(_)
+            )
+        })
+    }
 }
 
 impl Default for CommandQueue {
@@ -175,4 +184,27 @@ pub fn drain_command_queue(queue: &CommandQueue) -> Vec<claurst_core::types::Mes
     }
 
     messages
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn detects_only_injected_message_commands() {
+        let queue = CommandQueue::new();
+        assert!(!queue.has_injected_messages());
+
+        queue.push(
+            QueuedCommand::SetModel("freellmapi/auto".to_string()),
+            CommandPriority::Normal,
+        );
+        assert!(!queue.has_injected_messages());
+
+        queue.push(
+            QueuedCommand::InjectSystemMessage("note".to_string()),
+            CommandPriority::Normal,
+        );
+        assert!(queue.has_injected_messages());
+    }
 }

@@ -1756,6 +1756,9 @@ async fn run_interactive(
     };
     let initial_messages = session.messages.clone();
     let mut base_query_config = query_config;
+    base_query_config
+        .command_queue
+        .get_or_insert_with(claurst_query::CommandQueue::new);
     let mut live_config = config.clone();
     if !session.model.is_empty() {
         live_config.model = Some(session.model.clone());
@@ -3950,6 +3953,72 @@ async fn run_interactive(
         }
 
         if !app.is_streaming && current_query.is_none() {
+            if base_query_config
+                .command_queue
+                .as_ref()
+                .is_some_and(|queue| queue.has_injected_messages())
+            {
+                app.status_message = Some(
+                    "Background review finished - continuing automatically...".to_string(),
+                );
+                app.is_streaming = true;
+                app.streaming_text.clear();
+
+                let ct = CancellationToken::new();
+                cancel = Some(ct.clone());
+
+                let msgs_arc = Arc::new(tokio::sync::Mutex::new(messages.clone()));
+                let msgs_arc_clone = msgs_arc.clone();
+                let tools_arc_clone = tools_arc.clone();
+                let mut ctx_clone = tool_ctx.clone();
+                let mut qcfg = base_query_config.clone();
+                qcfg.model =
+                    claurst_api::effective_model_for_config(&cmd_ctx.config, &model_registry);
+                qcfg.max_tokens = cmd_ctx.config.effective_max_tokens();
+                qcfg.append_system_prompt = cmd_ctx.config.append_system_prompt.clone();
+                qcfg.system_prompt = base_query_config.system_prompt.clone();
+                qcfg.output_style = cmd_ctx.config.effective_output_style();
+                qcfg.output_style_prompt = cmd_ctx.config.resolve_output_style_prompt();
+                qcfg.working_directory = Some(tool_ctx.working_dir.display().to_string());
+                if let Some(level) = current_effort {
+                    qcfg.effort_level = Some(level);
+                }
+                if let Some(ref cq) = qcfg.command_queue {
+                    let cq = cq.clone();
+                    ctx_clone.completion_notifier =
+                        Some(claurst_tools::CompletionNotifier::new(move |msg| {
+                            cq.push(
+                                claurst_query::QueuedCommand::InjectSystemMessage(msg),
+                                claurst_query::CommandPriority::Normal,
+                            );
+                        }));
+                }
+                let tracker = cost_tracker.clone();
+                let tx = event_tx.clone();
+                let client_clone = client.clone();
+                goal_turn_start = std::time::Instant::now();
+
+                let handle = tokio::spawn(async move {
+                    let mut msgs = msgs_arc_clone.lock().await.clone();
+                    let outcome = claurst_query::run_query_loop(
+                        client_clone.as_ref(),
+                        &mut msgs,
+                        tools_arc_clone.as_slice(),
+                        &ctx_clone,
+                        &qcfg,
+                        tracker,
+                        Some(tx),
+                        ct,
+                        None,
+                    )
+                    .await;
+                    *msgs_arc_clone.lock().await = msgs;
+                    outcome
+                });
+                current_query = Some((handle, msgs_arc));
+                continue;
+            }
+
             if let Some(server_name) = app.take_pending_mcp_panel_auth() {
                 let server_config = cmd_ctx
                     .config
