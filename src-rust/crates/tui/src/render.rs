@@ -1937,11 +1937,12 @@ fn render_input(frame: &mut Frame, app: &App, area: Rect, focused: bool) {
             .split(status_area);
 
         let left_line = if app.has_credentials {
+            let active_model = app.active_model_name_for_display();
             let (provider, model_short) =
-                if let Some((provider, model)) = app.model_name.split_once('/') {
+                if let Some((provider, model)) = active_model.split_once('/') {
                     (provider.to_string(), model.to_string())
                 } else {
-                    ("local".to_string(), app.model_name.clone())
+                    ("local".to_string(), active_model.to_string())
                 };
             let mut spans = vec![
                 Span::styled(
@@ -1983,9 +1984,9 @@ fn render_input(frame: &mut Frame, app: &App, area: Rect, focused: bool) {
             ])
         };
 
-        // `?` opens the shortcuts overlay which already lists Ctrl+A / Ctrl+K
+        // `?` opens the shortcuts overlay which already lists Ctrl+Shift+A / Ctrl+K
         // and friends — surfacing them again here is redundant clutter.
-        let right_hint = if app.has_credentials {
+        let right_hint = if app.has_credentials && app.prompt_input.is_empty() {
             Line::from(vec![Span::styled("? shortcuts", Style::default().fg(dim))])
         } else {
             Line::from(Vec::<Span>::new())
@@ -2085,6 +2086,11 @@ fn render_status_row(frame: &mut Frame, app: &App, area: Rect) {
         s.push(Span::raw(" "));
         s.extend(shimmer_spans(&label, app.frame_count));
         s
+    } else if let Some(status) = app.status_message.as_deref() {
+        vec![Span::styled(
+            status.to_string(),
+            Style::default().fg(Color::DarkGray),
+        )]
     } else if let (Some(verb), Some(elapsed)) =
         (app.last_turn_verb, app.last_turn_elapsed.as_deref())
     {
@@ -2094,11 +2100,6 @@ fn render_status_row(frame: &mut Frame, app: &App, area: Rect) {
             Style::default()
                 .fg(Color::DarkGray)
                 .add_modifier(Modifier::DIM),
-        )]
-    } else if let Some(status) = app.status_message.as_deref() {
-        vec![Span::styled(
-            status.to_string(),
-            Style::default().fg(Color::DarkGray),
         )]
     } else {
         Vec::new()

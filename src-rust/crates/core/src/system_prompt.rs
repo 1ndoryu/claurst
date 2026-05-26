@@ -390,9 +390,12 @@ fn build_env_info_section(working_dir: Option<&str>) -> String {
         &shell_env
     };
 
-    // Shell line: on Windows add Unix syntax note
+    // Shell line: on Windows reinforce the native shell expectation.
     let shell_line = if cfg!(target_os = "windows") {
-        format!("Shell: {} (use Unix shell syntax, not Windows — e.g., /dev/null not NUL, forward slashes in paths)", shell_name)
+        format!(
+            "Shell: {} (prefer native Windows/PowerShell syntax unless the tool explicitly runs bash, Git Bash, or WSL)",
+            shell_name
+        )
     } else {
         format!("Shell: {}", shell_name)
     };
@@ -427,9 +430,11 @@ fn build_env_info_section(working_dir: Option<&str>) -> String {
     // Platform-specific guidance so the model uses the right commands.
     let os_note = if cfg!(target_os = "windows") {
         format!(
-            "\nIMPORTANT: The user is on Windows ({}). Use Windows-compatible commands \
-             (e.g., `dir` not `ls`, `type` not `cat`, backslashes in native paths). \
-             When the shell is bash/git-bash, Unix syntax is acceptable.",
+            "\nIMPORTANT: The user is on Windows ({}). Prefer PowerShell or other \
+             Windows-native commands for system tasks. Use Windows-compatible commands \
+             and paths (for example `Get-ChildItem` or `dir`, `Get-Content` or `type`, \
+             `NUL`, and native drive-letter paths). Only use Unix syntax when the tool \
+             explicitly runs bash or the user is clearly in Git Bash/WSL.",
             os_version
         )
     } else if cfg!(target_os = "macos") {
@@ -660,5 +665,23 @@ mod tests {
         clear_system_prompt_sections();
         let cache = section_cache().lock().unwrap();
         assert!(cache.is_empty());
+    }
+
+    #[test]
+    fn test_env_guidance_matches_platform_shell_expectation() {
+        let env = build_env_info_section(None);
+
+        #[cfg(target_os = "windows")]
+        {
+            assert!(env.contains("Prefer PowerShell"));
+            assert!(env.contains("native Windows/PowerShell syntax"));
+            assert!(!env.contains("use Unix shell syntax"));
+        }
+
+        #[cfg(not(target_os = "windows"))]
+        {
+            assert!(!env.contains("Prefer PowerShell"));
+            assert!(!env.contains("native Windows/PowerShell syntax"));
+        }
     }
 }

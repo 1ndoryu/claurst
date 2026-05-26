@@ -49,6 +49,100 @@ use std::{path::PathBuf, sync::Arc};
 use tracing::{debug, info, warn};
 use tracing_subscriber::EnvFilter;
 
+const AUTO_REVIEW_STATUS_PREFIX: &str = "[AutoReviewStatus] ";
+const AUTO_REVIEW_FINDINGS_PREFIX: &str = "[AutoReview/";
+
+fn auto_review_findings_status(msg: &str) -> Option<String> {
+    let rest = msg.strip_prefix(AUTO_REVIEW_FINDINGS_PREFIX)?;
+    let (_, after_header) = rest.split_once("] Findings for ")?;
+    let scope = after_header.lines().next()?.trim().trim_end_matches('.');
+    if scope.is_empty() {
+        return None;
+    }
+
+    Some(format!(
+        "Background review found actionable issues for {}.",
+        scope
+    ))
+}
+
+fn background_completion_follow_up_status(status: Option<String>) -> String {
+    match status {
+        Some(status) => format!("{} Continuing automatically...", status.trim()),
+        None => "Background task finished. Continuing automatically...".to_string(),
+    }
+}
+
+fn sync_background_task_indicator(app: &mut claurst_tui::App) {
+    let running_count = claurst_core::tasks::global_registry()
+        .list()
+        .into_iter()
+        .filter(|task| task.is_running())
+        .count();
+
+    app.background_task_count = running_count;
+}
+
+fn maybe_push_background_transcript_status(app: &mut claurst_tui::App, status: &str) {
+    let status = status.trim();
+    if status.is_empty() {
+        return;
+    }
+
+    let lower = status.to_ascii_lowercase();
+    if !lower.contains("background review") && !lower.contains("auto-review") {
+        return;
+    }
+
+    let style = if lower.contains("failed") || lower.contains("error") {
+        claurst_tui::app::SystemMessageStyle::Warning
+    } else {
+        claurst_tui::app::SystemMessageStyle::Info
+    };
+
+    app.push_system_message(status.to_string(), style);
+}
+
+fn show_background_status(app: &mut claurst_tui::App, status: String) {
+    maybe_push_background_transcript_status(app, &status);
+    app.background_task_status = Some(status.clone());
+    app.status_message = Some(status.clone());
+    app.notifications.push(
+        claurst_tui::NotificationKind::Info,
+        status,
+        Some(6),
+    );
+}
+
+fn queue_completion_message(queue: &claurst_query::CommandQueue, msg: String) {
+    if let Some(status) = msg.strip_prefix(AUTO_REVIEW_STATUS_PREFIX) {
+        queue.push(
+            claurst_query::QueuedCommand::ShowStatus(status.trim().to_string()),
+            claurst_query::CommandPriority::Normal,
+        );
+        return;
+    }
+
+    if let Some(status) = auto_review_findings_status(&msg) {
+        queue.push(
+            claurst_query::QueuedCommand::ShowStatus(status),
+            claurst_query::CommandPriority::Normal,
+        );
+    }
+
+    queue.push(
+        claurst_query::QueuedCommand::InjectSystemMessage(msg),
+        claurst_query::CommandPriority::Normal,
+    );
+}
+
+fn permission_scope_path<'a>(tool_name: &str, selected_path: Option<&'a str>) -> Option<&'a str> {
+    match tool_name {
+        "Read" | "Write" | "Edit" | "NotebookEdit" | "Glob" | "Grep" => selected_path,
+        _ => None,
+    }
+}
+
 // ---------------------------------------------------------------------------
 // MCP tool wrapper: makes MCP server tools look like native cc-tools.
 // ---------------------------------------------------------------------------
@@ -1320,6 +1414,38 @@ fn normalize_provider_from_model(config: &mut Config) {
     }
 }
 
+fn normalize_session_model_for_config(config: &Config, model: &str) -> String {
+    if model.is_empty() {
+        return String::new();
+    }
+
+    let uses_freellmapi = matches!(config.provider.as_deref(), Some("freellmapi"))
+        || model.starts_with("freellmapi/");
+    if !uses_freellmapi {
+        return model.to_string();
+    }
+
+    if let Some(stripped) = model.strip_prefix("freellmapi/") {
+        if stripped.is_empty() {
+            return "freellmapi/auto".to_string();
+        }
+        return format!("freellmapi/{}", stripped);
+    }
+
+    if model == "auto" {
+        return "freellmapi/auto".to_string();
+    }
+
+    // Legacy session/config values could persist arbitrary bare FreeLLMAPI model
+    // ids. Reset those to the safe default instead of reviving stale text input.
+    "freellmapi/auto".to_string()
+}
+
+fn canonical_session_model(config: &Config, registry: &claurst_api::ModelRegistry) -> String {
+    let effective = claurst_api::effective_model_for_config(config, registry);
+    normalize_session_model_for_config(config, &effective)
+}
+
 /// Filter the tool list based on the agent's access level.
 /// - "full"        → all tools allowed (no filtering)
 /// - "read-only"   → only ReadOnly/None permission tools and AskUserQuestion
@@ -1739,7 +1865,7 @@ async fn run_interactive(
                     id, e
                 ));
                 let mut session = claurst_core::history::ConversationSession::new(
-                    claurst_api::effective_model_for_config(&config, &model_registry),
+                    canonical_session_model(&config, &model_registry),
                 );
                 session.id = tool_ctx.session_id.clone();
                 session.working_dir = Some(tool_ctx.working_dir.display().to_string());
@@ -1747,13 +1873,15 @@ async fn run_interactive(
             }
         }
     } else {
-        let mut session = claurst_core::history::ConversationSession::new(
-            claurst_api::effective_model_for_config(&config, &model_registry),
-        );
+        let mut session = claurst_core::history::ConversationSession::new(canonical_session_model(
+            &config,
+            &model_registry,
+        ));
         session.id = tool_ctx.session_id.clone();
         session.working_dir = Some(tool_ctx.working_dir.display().to_string());
         session
     };
+    session.model = normalize_session_model_for_config(&config, &session.model);
     let initial_messages = session.messages.clone();
     let mut base_query_config = query_config;
     base_query_config
@@ -1762,6 +1890,7 @@ async fn run_interactive(
     let mut live_config = config.clone();
     if !session.model.is_empty() {
         live_config.model = Some(session.model.clone());
+        normalize_provider_from_model(&mut live_config);
     }
     let pending_permissions = tool_ctx.pending_permissions.clone().unwrap_or_else(|| {
         Arc::new(ParkingMutex::new(
@@ -1825,6 +1954,7 @@ async fn run_interactive(
     if let Some(ref provider) = live_config.provider {
         if provider != "anthropic" && !app.model_name.contains('/') {
             app.model_name = format!("{}/{}", provider, app.model_name);
+            app.routed_model_name = None;
         }
     }
 
@@ -2267,12 +2397,33 @@ async fn run_interactive(
                                 }
                                 Some(CommandResult::ResumeSession(resumed_session)) => {
                                     session = resumed_session;
+                                    session.model = normalize_session_model_for_config(
+                                        &cmd_ctx.config,
+                                        &session.model,
+                                    );
+                                    if session.model.is_empty() {
+                                        session.model = canonical_session_model(
+                                            &cmd_ctx.config,
+                                            &model_registry,
+                                        );
+                                    }
                                     messages = session.messages.clone();
                                     app.replace_messages(messages.clone());
                                     cmd_ctx.config.model = Some(session.model.clone());
                                     app.config.model = Some(session.model.clone());
                                     tool_ctx.config.model = Some(session.model.clone());
+                                    normalize_provider_from_model(&mut cmd_ctx.config);
+                                    normalize_provider_from_model(&mut app.config);
+                                    normalize_provider_from_model(&mut tool_ctx.config);
                                     app.model_name = session.model.clone();
+                                    if let Some(provider) = app.config.provider.as_deref() {
+                                        if provider != "anthropic" && !app.model_name.contains('/')
+                                        {
+                                            app.model_name =
+                                                format!("{}/{}", provider, app.model_name);
+                                        }
+                                    }
+                                    app.routed_model_name = None;
                                     tool_ctx.session_id = session.id.clone();
                                     tool_ctx.file_history = Arc::new(ParkingMutex::new(
                                         claurst_core::file_history::FileHistory::new(),
@@ -2397,10 +2548,8 @@ async fn run_interactive(
                                         applied_cfg.permission_mode,
                                         claurst_core::config::PermissionMode::Plan
                                     );
-                                    session.model = claurst_api::effective_model_for_config(
-                                        &cmd_ctx.config,
-                                        &model_registry,
-                                    );
+                                    session.model =
+                                        canonical_session_model(&cmd_ctx.config, &model_registry);
                                     app.status_message = Some("Configuration updated.".to_string());
                                 }
                                 Some(CommandResult::ConfigChangeMessage(new_cfg, msg)) => {
@@ -2417,10 +2566,8 @@ async fn run_interactive(
                                         app.fast_mode = false;
                                     }
                                     app.config = applied_cfg.clone();
-                                    session.model = claurst_api::effective_model_for_config(
-                                        &cmd_ctx.config,
-                                        &model_registry,
-                                    );
+                                    session.model =
+                                        canonical_session_model(&cmd_ctx.config, &model_registry);
                                     app.status_message = Some(msg);
                                 }
                                 Some(CommandResult::UserMessage(msg)) => {
@@ -2790,10 +2937,7 @@ async fn run_interactive(
                             let cq = cq.clone();
                             ctx_clone.completion_notifier =
                                 Some(claurst_tools::CompletionNotifier::new(move |msg| {
-                                    cq.push(
-                                        claurst_query::QueuedCommand::InjectSystemMessage(msg),
-                                        claurst_query::CommandPriority::Normal,
-                                    );
+                                    queue_completion_message(&cq, msg);
                                 }));
                         }
                         let tracker = cost_tracker.clone();
@@ -2875,9 +3019,13 @@ async fn run_interactive(
 
                                 if let Some(manager) = tool_ctx.permission_manager.as_ref() {
                                     if let Ok(mut manager) = manager.lock() {
+                                        let scoped_path = permission_scope_path(
+                                            &pending.request.tool_name,
+                                            selected_path.as_deref(),
+                                        );
                                         match selected_key {
                                             Some('Y') => {
-                                                if let Some(path) = selected_path.as_deref() {
+                                                if let Some(path) = scoped_path {
                                                     manager.add_session_allow_path(
                                                         &pending.request.tool_name,
                                                         path,
@@ -2893,22 +3041,41 @@ async fn run_interactive(
                                                     match claurst_core::config::Settings::load_sync(
                                                     ) {
                                                         Ok(s) => s,
-                                                        Err(_) => {
+                                                        Err(err) => {
+                                                            app.notifications.push(
+                                                                claurst_tui::notifications::NotificationKind::Warning,
+                                                                format!(
+                                                                    "Could not load settings before saving permission rule: {}",
+                                                                    err
+                                                                ),
+                                                                Some(5),
+                                                            );
                                                             claurst_core::config::Settings::default(
                                                             )
                                                         }
                                                     };
-                                                if let Some(path) = selected_path.as_deref() {
+                                                let persist_result = if let Some(path) = scoped_path
+                                                {
                                                     let pattern = format!("{}*", path);
-                                                    let _ = manager.add_persistent_allow_path(
+                                                    manager.add_persistent_allow_path(
                                                         &pending.request.tool_name,
                                                         &pattern,
                                                         &mut settings,
-                                                    );
+                                                    )
                                                 } else {
-                                                    let _ = manager.add_persistent_allow(
+                                                    manager.add_persistent_allow(
                                                         &pending.request.tool_name,
                                                         &mut settings,
+                                                    )
+                                                };
+                                                if let Err(err) = persist_result {
+                                                    app.notifications.push(
+                                                        claurst_tui::notifications::NotificationKind::Error,
+                                                        format!(
+                                                            "Failed to persist permission rule for {}: {}",
+                                                            pending.request.tool_name, err
+                                                        ),
+                                                        None,
                                                     );
                                                 }
                                             }
@@ -2935,7 +3102,7 @@ async fn run_interactive(
                         }
                     }
                     if !app.model_name.is_empty() {
-                        session.model = app.model_name.clone();
+                        session.model = canonical_session_model(&cmd_ctx.config, &model_registry);
                     }
                     // Handle agent mode change (Tab key cycles build→plan→explore)
                     if app.agent_mode_changed {
@@ -3576,6 +3743,8 @@ async fn run_interactive(
             }
         }
 
+        sync_background_task_indicator(&mut app);
+
         // Refresh task list if the overlay is visible.
         if app.tasks_overlay.visible {
             app.tasks_overlay.refresh_tasks(&claurst_tools::TASK_STORE);
@@ -3776,8 +3945,7 @@ async fn run_interactive(
                 messages = msgs_arc.lock().await.clone();
                 session.messages = messages.clone();
                 session.updated_at = chrono::Utc::now();
-                session.model =
-                    claurst_api::effective_model_for_config(&cmd_ctx.config, &model_registry);
+                session.model = canonical_session_model(&cmd_ctx.config, &model_registry);
                 session.working_dir = Some(tool_ctx.working_dir.display().to_string());
                 app.is_streaming = false;
                 app.status_message = None;
@@ -3908,10 +4076,7 @@ async fn run_interactive(
                                 let cq = cq.clone();
                                 ctx_clone.completion_notifier =
                                     Some(claurst_tools::CompletionNotifier::new(move |msg| {
-                                        cq.push(
-                                            claurst_query::QueuedCommand::InjectSystemMessage(msg),
-                                            claurst_query::CommandPriority::Normal,
-                                        );
+                                        queue_completion_message(&cq, msg);
                                     }));
                             }
                             let tracker = cost_tracker.clone();
@@ -3953,14 +4118,18 @@ async fn run_interactive(
         }
 
         if !app.is_streaming && current_query.is_none() {
+            let queued_status = base_query_config
+                .command_queue
+                .as_ref()
+                .and_then(|queue| queue.drain_status_messages().into_iter().last());
+
             if base_query_config
                 .command_queue
                 .as_ref()
                 .is_some_and(|queue| queue.has_injected_messages())
             {
-                app.status_message = Some(
-                    "Background review finished - continuing automatically...".to_string(),
-                );
+                let follow_up_status = background_completion_follow_up_status(queued_status.clone());
+                show_background_status(&mut app, follow_up_status);
                 app.is_streaming = true;
                 app.streaming_text.clear();
 
@@ -3987,10 +4156,7 @@ async fn run_interactive(
                     let cq = cq.clone();
                     ctx_clone.completion_notifier =
                         Some(claurst_tools::CompletionNotifier::new(move |msg| {
-                            cq.push(
-                                claurst_query::QueuedCommand::InjectSystemMessage(msg),
-                                claurst_query::CommandPriority::Normal,
-                            );
+                            queue_completion_message(&cq, msg);
                         }));
                 }
                 let tracker = cost_tracker.clone();
@@ -4017,6 +4183,8 @@ async fn run_interactive(
                 });
                 current_query = Some((handle, msgs_arc));
                 continue;
+            } else if let Some(status) = queued_status {
+                show_background_status(&mut app, status);
             }
 
             if let Some(server_name) = app.take_pending_mcp_panel_auth() {
@@ -4086,6 +4254,35 @@ async fn run_interactive(
 
         if app.should_exit {
             break 'main;
+        }
+    }
+
+    if let Some((handle, msgs_arc)) = current_query.take() {
+        if handle.is_finished() {
+            let _ = handle.await;
+        } else {
+            handle.abort();
+            let _ = handle.await;
+        }
+        messages = msgs_arc.lock().await.clone();
+    }
+
+    let should_persist_session = !session.messages.is_empty()
+        || !messages.is_empty()
+        || !app.prompt_input.text.trim().is_empty()
+        || session.title.is_some()
+        || session.remote_session_url.is_some()
+        || !session.checkpoints.is_empty();
+
+    if should_persist_session {
+        // Persist the latest in-memory snapshot even when the user exits before
+        // the usual end-of-turn save path runs.
+        session.messages = messages.clone();
+        session.updated_at = chrono::Utc::now();
+        session.model = canonical_session_model(&cmd_ctx.config, &model_registry);
+        session.working_dir = Some(tool_ctx.working_dir.display().to_string());
+        if let Err(err) = claurst_core::history::save_session(&session).await {
+            warn!("Failed to persist session {} on exit: {}", session.id, err);
         }
     }
 
@@ -4463,6 +4660,33 @@ fn format_provider_name(provider_id: &str) -> String {
             })
             .collect::<Vec<_>>()
             .join(" "),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{auto_review_findings_status, background_completion_follow_up_status};
+
+    #[test]
+    fn converts_auto_review_findings_into_visible_status() {
+        let msg = "[AutoReview/correctness] Findings for src/main.rs.\n\n- high: src/main.rs risk";
+
+        assert_eq!(
+            auto_review_findings_status(msg).as_deref(),
+            Some("Background review found actionable issues for src/main.rs.")
+        );
+    }
+
+    #[test]
+    fn preserves_specific_status_during_background_follow_up() {
+        let status = background_completion_follow_up_status(Some(
+            "Background review found actionable issues for src/main.rs.".to_string(),
+        ));
+
+        assert_eq!(
+            status,
+            "Background review found actionable issues for src/main.rs. Continuing automatically..."
+        );
     }
 }
 

@@ -1103,6 +1103,7 @@ pub struct App {
     pub token_budget: Option<u32>,
     pub cost_usd: f64,
     pub model_name: String,
+    pub routed_model_name: Option<String>,
     /// Whether the app has valid API credentials configured.
     /// False = show the in-TUI provider setup dialog on startup.
     pub has_credentials: bool,
@@ -1602,6 +1603,7 @@ impl App {
             token_budget: Self::load_token_budget(),
             cost_usd: 0.0,
             model_name,
+            routed_model_name: None,
             has_credentials: true, // overridden by caller when no key is configured
             effort_level: EffortLevel::Normal,
             fast_mode: false,
@@ -1877,6 +1879,7 @@ impl App {
                 let imported_mcp = result.imported_fields.iter().any(|f| f == "mcpServers");
                 self.config = new_config.clone();
                 self.model_name = self.config.effective_model().to_string();
+                self.routed_model_name = None;
                 self.cost_tracker.set_model(&self.model_name);
                 self.refresh_context_window_size();
                 self.context_used_tokens = 0;
@@ -1919,6 +1922,7 @@ impl App {
     }
 
     fn begin_user_turn_snapshot(&mut self) {
+        self.routed_model_name = None;
         self.turn_metadata.push(TurnMetadata {
             submitted_at: Some(format_turn_time_label()),
             model_name: Some(self.model_name.clone()),
@@ -2009,6 +2013,20 @@ impl App {
 
     fn display_default_model_for_provider(&self, provider_id: &str) -> String {
         crate::model_picker::default_model_for_provider(provider_id, &self.model_registry)
+    }
+
+    fn display_model_for_provider(provider_id: &str, model: &str) -> String {
+        if model.contains('/') || provider_id == "anthropic" {
+            model.to_string()
+        } else {
+            format!("{}/{}", provider_id, model)
+        }
+    }
+
+    pub fn active_model_name_for_display(&self) -> &str {
+        self.routed_model_name
+            .as_deref()
+            .unwrap_or(self.model_name.as_str())
     }
 
     fn open_model_picker_for_provider(&mut self, provider_id: &str, title: Option<String>) {
@@ -2122,6 +2140,7 @@ impl App {
                 "llamacpp",
                 "azure",
                 "amazon-bedrock",
+                "freellmapi",
                 "free",
                 "opencode-zen",
             ];
@@ -2153,6 +2172,7 @@ impl App {
         let model = self.display_default_model_for_provider(&provider_id);
         self.cost_tracker.set_model(&model);
         self.model_name = model;
+        self.routed_model_name = None;
         self.refresh_context_window_size();
         self.context_used_tokens = 0;
     }
@@ -2287,6 +2307,7 @@ impl App {
     pub fn set_model(&mut self, model: String) {
         self.cost_tracker.set_model(&model);
         self.model_name = model.clone();
+        self.routed_model_name = None;
         self.config.model = Some(model.clone());
         if let Some(provider) = Self::infer_provider_from_model(&model) {
             self.config.provider = Some(provider);
@@ -2343,6 +2364,7 @@ impl App {
         self.has_credentials = has_credentials;
         self.fast_mode = false;
         self.model_name = self.config.effective_model().to_string();
+        self.routed_model_name = None;
         self.cost_tracker.set_model(&self.model_name);
         self.status_message = Some(status_message);
         self.clear_prompt();
@@ -2957,6 +2979,7 @@ impl App {
             style,
         });
         self.invalidate_transcript();
+        self.on_new_message();
     }
 
     /// Called whenever a new message is appended to `messages`.
@@ -3897,6 +3920,16 @@ impl App {
                     self.model_picker.select_next()
                 }
                 KeyCode::Enter => {
+                    let provider = self.config.provider.as_deref().unwrap_or("anthropic");
+                    if provider == claurst_core::provider_id::ProviderId::FREELLMAPI
+                        && self.model_picker.filtered_models().is_empty()
+                    {
+                        self.status_message = Some(
+                            "FreeLLMAPI only accepts models advertised by /models."
+                                .to_string(),
+                        );
+                        return false;
+                    }
                     if let Some((model_id, effort)) = self.model_picker.confirm() {
                         // If user picked a model other than the fast-mode model
                         // while fast mode was active, turn fast mode off.
@@ -3914,7 +3947,6 @@ impl App {
                         // a routing prefix (`free/…`, `zen/…`, `openrouter/…`)
                         // so re-prefixing would produce nonsense like
                         // `free/free/auto`.
-                        let provider = self.config.provider.as_deref().unwrap_or("anthropic");
                         let full_model = if provider == "anthropic" {
                             model_id.clone()
                         } else if provider == "free" {
@@ -6540,6 +6572,23 @@ impl App {
                 }
                 self.is_streaming = true;
                 match stream_evt {
+                    claurst_api::AnthropicStreamEvent::MessageStart { model, .. } => {
+                        self.stall_start = None;
+                        if !model.is_empty() {
+                            let provider = self.config.provider.as_deref().unwrap_or("anthropic");
+                            let display_model = Self::display_model_for_provider(provider, &model);
+                            self.routed_model_name = Some(display_model.clone());
+                            self.cost_tracker.set_model(&display_model);
+                            if let Some(index) = self.current_user_turn_index() {
+                                if self.turn_metadata.len() <= index {
+                                    self.sync_turn_metadata_to_messages();
+                                }
+                                if let Some(meta) = self.turn_metadata.get_mut(index) {
+                                    meta.model_name = Some(display_model);
+                                }
+                            }
+                        }
+                    }
                     claurst_api::AnthropicStreamEvent::ContentBlockDelta { delta, .. } => {
                         // Reset stall timer on any incoming delta — we're making progress.
                         self.stall_start = None;
@@ -7323,12 +7372,15 @@ mod tests {
     }
 
     #[test]
-    fn test_ctrl_a_shortcut_opens_model_picker() {
+    fn test_ctrl_shift_a_shortcut_opens_model_picker() {
         let mut app = make_app();
         app.has_credentials = true;
         app.config.provider = Some("anthropic".to_string());
 
-        app.handle_key_event(press_key(KeyCode::Char('a'), KeyModifiers::CONTROL));
+        app.handle_key_event(press_key(
+            KeyCode::Char('a'),
+            KeyModifiers::CONTROL | KeyModifiers::SHIFT,
+        ));
 
         assert!(app.model_picker.visible);
     }

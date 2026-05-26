@@ -1111,12 +1111,44 @@ pub async fn run_query_loop(
                     }
                 }
                 if let Some(provider) = provider {
-                    debug!(provider = %provider_id_str, model = %model_id_str, "Dispatching to non-Anthropic provider");
+                    let mut routed_model_id = model_id_str.clone();
+                    if provider_id_str == claurst_core::provider_id::ProviderId::FREELLMAPI
+                        && routed_model_id != "auto"
+                    {
+                        match provider.list_models().await {
+                            Ok(models) => {
+                                let model_available =
+                                    models.iter().any(|model| model.id == routed_model_id.as_str());
+                                if !model_available {
+                                    warn!(
+                                        requested_model = %routed_model_id,
+                                        "FreeLLMAPI model unavailable; falling back to auto"
+                                    );
+                                    if let Some(ref tx) = event_tx {
+                                        let _ = tx.send(QueryEvent::Status(format!(
+                                            "FreeLLMAPI model '{}' unavailable; using auto.",
+                                            routed_model_id
+                                        )));
+                                    }
+                                    routed_model_id = "auto".to_string();
+                                }
+                            }
+                            Err(error) => {
+                                warn!(
+                                    requested_model = %routed_model_id,
+                                    error = %error,
+                                    "Failed to validate FreeLLMAPI model before dispatch"
+                                );
+                            }
+                        }
+                    }
+
+                    debug!(provider = %provider_id_str, model = %routed_model_id, "Dispatching to non-Anthropic provider");
 
                     // Notify TUI that we're calling the provider using a random spinner verb
                     if let Some(ref tx) = event_tx {
                         use claurst_core::sample_spinner_verb;
-                        let seed = (provider_id_str.len() ^ model_id_str.len()) as usize;
+                        let seed = (provider_id_str.len() ^ routed_model_id.len()) as usize;
                         let verb = sample_spinner_verb(seed);
                         let _ = tx.send(QueryEvent::Status(format!("✳ {}…", verb)));
                     }
@@ -1129,7 +1161,7 @@ pub async fn run_query_loop(
                     let mut caps = provider.capabilities();
                     if let Some(model_entry) =
                         config.model_registry.as_ref().and_then(|model_registry| {
-                            model_registry.get(&provider_id_str, &model_id_str)
+                            model_registry.get(&provider_id_str, &routed_model_id)
                         })
                     {
                         caps.image_input = model_entry.vision();
@@ -1176,7 +1208,7 @@ pub async fn run_query_loop(
                         .collect();
 
                     let provider_request = claurst_api::ProviderRequest {
-                        model: model_id_str.to_owned(),
+                        model: routed_model_id.to_owned(),
                         messages: provider_messages,
                         system_prompt: Some(system_for_provider.clone()),
                         tools: provider_tools,
@@ -1193,7 +1225,7 @@ pub async fn run_query_loop(
                         },
                         provider_options: build_provider_options(
                             &provider_id_str,
-                            &model_id_str,
+                            &routed_model_id,
                             config.effort_level,
                             effective_thinking_budget,
                         ),

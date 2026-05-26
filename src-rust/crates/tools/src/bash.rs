@@ -324,11 +324,19 @@ impl Tool for BashTool {
     }
 
     fn description(&self) -> &str {
-        "Executes a given bash command and returns its output. The working directory \
-         persists between commands, but shell state does not. The shell environment is \
-         initialized from the user's profile (bash or zsh). Avoid using interactive \
-         commands. Use this tool for running shell commands, scripts, git operations, \
-         and system tasks."
+        if cfg!(windows) {
+            "Executes shell commands through the Windows command shell compatibility path. \
+             Prefer PowerShell for Windows-native operations, administration, and path \
+             handling. Use this tool only when you specifically need cmd/bash-style shell \
+             behavior. The working directory persists between commands, but shell state \
+             does not. Avoid using interactive commands."
+        } else {
+            "Executes a given bash command and returns its output. The working directory \
+             persists between commands, but shell state does not. The shell environment is \
+             initialized from the user's profile (bash or zsh). Avoid using interactive \
+             commands. Use this tool for running shell commands, scripts, git operations, \
+             and system tasks."
+        }
     }
 
     fn permission_level(&self) -> PermissionLevel {

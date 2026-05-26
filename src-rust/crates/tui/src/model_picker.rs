@@ -280,6 +280,42 @@ pub fn models_for_provider_from_registry(
     if provider_id == "free" {
         return free_provider_models();
     }
+    if provider_id == "freellmapi" {
+        let mut entries = registry.list_visible_by_provider(provider_id);
+        if entries.is_empty() {
+            entries = registry.list_by_provider(provider_id);
+        }
+
+        if entries.is_empty() {
+            return freellmapi_provider_models();
+        }
+
+        entries.sort_by(|a, b| {
+            let rd_a = a.release_date.as_deref().unwrap_or("");
+            let rd_b = b.release_date.as_deref().unwrap_or("");
+            rd_b.cmp(rd_a).then_with(|| (*a.info.id).cmp(&*b.info.id))
+        });
+
+        let mut models = freellmapi_provider_models();
+        models.extend(entries.iter().map(|e| {
+            let cost_str = match (e.cost_input, e.cost_output) {
+                (Some(ci), Some(co)) => format!(
+                    "{} | ${:.2}/${:.2} per M",
+                    format_context_window(e.info.context_window),
+                    ci,
+                    co
+                ),
+                _ => format_context_window(e.info.context_window),
+            };
+            ModelEntry {
+                id: e.info.id.to_string(),
+                display_name: e.info.name.clone(),
+                description: cost_str,
+                is_current: false,
+            }
+        }));
+        return models;
+    }
     // Codex (ChatGPT-authenticated OpenAI) is not in the models.dev catalog —
     // serve the curated CODEX_MODELS list so the picker isn't empty.
     if provider_id == "codex" {
@@ -350,6 +386,9 @@ pub fn default_model_for_provider(
     if provider_id == "free" {
         return "free/auto".to_string();
     }
+    if provider_id == "freellmapi" {
+        return "freellmapi/auto".to_string();
+    }
     if let Some(best) = registry.best_model_for_provider(provider_id) {
         if provider_id == "anthropic" {
             best
@@ -381,6 +420,15 @@ fn codex_provider_models() -> Vec<ModelEntry> {
             }
         })
         .collect()
+}
+
+fn freellmapi_provider_models() -> Vec<ModelEntry> {
+    vec![ModelEntry {
+        id: "auto".to_string(),
+        display_name: "Auto (router picks the best available model)".to_string(),
+        description: "waits for the live /models catalog from FreeLLMAPI".to_string(),
+        is_current: false,
+    }]
 }
 
 /// Curated free-mode model list used by `models_for_provider_from_registry`.
@@ -1278,12 +1326,29 @@ mod tests {
     }
 
     #[test]
+    fn default_model_for_provider_freellmapi_uses_auto() {
+        let registry = claurst_api::ModelRegistry::new();
+        assert_eq!(
+            default_model_for_provider("freellmapi", &registry),
+            "freellmapi/auto"
+        );
+    }
+
+    #[test]
     fn default_model_for_provider_unknown_falls_back() {
         let registry = claurst_api::ModelRegistry::new();
         assert_eq!(
             default_model_for_provider("some-self-hosted-thing", &registry),
             "some-self-hosted-thing/default"
         );
+    }
+
+    #[test]
+    fn models_for_provider_freellmapi_starts_with_auto() {
+        let registry = claurst_api::ModelRegistry::new();
+        let models = models_for_provider_from_registry("freellmapi", &registry);
+        assert_eq!(models.len(), 1);
+        assert_eq!(models[0].id, "auto");
     }
 
     // 18. set_models replaces the model list.

@@ -50,6 +50,8 @@ pub enum QueuedCommand {
     InjectUserMessage(String),
     /// Inject a system-level message (sent as a user message with [System] prefix)
     InjectSystemMessage(String),
+    /// Show a status update in the TUI without injecting another model turn.
+    ShowStatus(String),
     /// Trigger a named skill
     TriggerSkill(String),
 }
@@ -140,6 +142,26 @@ impl CommandQueue {
             )
         })
     }
+
+    pub fn drain_status_messages(&self) -> Vec<String> {
+        let mut heap = self.0.lock().unwrap();
+        let mut kept = BinaryHeap::new();
+        let mut statuses = Vec::new();
+
+        while let Some(entry) = heap.pop() {
+            match entry.command {
+                QueuedCommand::ShowStatus(text) => statuses.push(text),
+                other => kept.push(QueueEntry {
+                    command: other,
+                    priority: entry.priority,
+                    timestamp: entry.timestamp,
+                }),
+            }
+        }
+
+        *heap = kept;
+        statuses
+    }
 }
 
 impl Default for CommandQueue {
@@ -156,8 +178,8 @@ impl Default for CommandQueue {
 /// prepended to the conversation before the next API call.
 ///
 /// Commands that are handled purely by the TUI/app layer (Compact, Clear,
-/// SetModel, TriggerSkill) are silently dropped here — the query loop does
-/// not need to act on them directly.
+/// SetModel, ShowStatus, TriggerSkill) are silently dropped here — the query
+/// loop does not need to act on them directly.
 pub fn drain_command_queue(queue: &CommandQueue) -> Vec<claurst_core::types::Message> {
     use claurst_core::types::Message;
 
@@ -175,6 +197,7 @@ pub fn drain_command_queue(queue: &CommandQueue) -> Vec<claurst_core::types::Mes
                 messages.push(Message::user(format!("[System]: {text}")));
             }
             QueuedCommand::SetModel(_)
+            | QueuedCommand::ShowStatus(_)
             | QueuedCommand::Compact
             | QueuedCommand::Clear
             | QueuedCommand::TriggerSkill(_) => {
@@ -202,9 +225,36 @@ mod tests {
         assert!(!queue.has_injected_messages());
 
         queue.push(
+            QueuedCommand::ShowStatus("done".to_string()),
+            CommandPriority::Normal,
+        );
+        assert!(!queue.has_injected_messages());
+
+        queue.push(
             QueuedCommand::InjectSystemMessage("note".to_string()),
             CommandPriority::Normal,
         );
         assert!(queue.has_injected_messages());
+    }
+
+    #[test]
+    fn drains_status_messages_without_consuming_injected_messages() {
+        let queue = CommandQueue::new();
+        queue.push(
+            QueuedCommand::ShowStatus("Background review finished".to_string()),
+            CommandPriority::Normal,
+        );
+        queue.push(
+            QueuedCommand::InjectSystemMessage("note".to_string()),
+            CommandPriority::Normal,
+        );
+
+        let statuses = queue.drain_status_messages();
+        assert_eq!(statuses, vec!["Background review finished".to_string()]);
+        assert!(queue.has_injected_messages());
+
+        let drained = drain_command_queue(&queue);
+        assert_eq!(drained.len(), 1);
+        assert!(queue.is_empty());
     }
 }

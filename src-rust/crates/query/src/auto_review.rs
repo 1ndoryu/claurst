@@ -17,6 +17,7 @@ const MAX_REVIEWABLE_FILES: usize = 8;
 const CHANGE_CONTEXT_LINES: usize = 6;
 const MAX_CHANGE_EXCERPT_CHARS: usize = 2_400;
 const MAX_NOTIFICATION_CHARS: usize = 3_200;
+const AUTO_REVIEW_STATUS_PREFIX: &str = "[AutoReviewStatus] ";
 const AUTO_REVIEW_SYSTEM_PROMPT: &str = "You are a background code review agent. Review only the provided code changes and the current files they reference. Ignore style nits, speculative advice, and anything not grounded in the changed code. If this is a false positive, a docs-only change, or there is no actionable issue, respond exactly as `NO_REVIEW_NEEDED: <one sentence>`. Otherwise respond with terse findings only, each including severity, file path, and the concrete risk. Do not suggest writing code or running write tools.";
 
 struct ReviewArea {
@@ -73,8 +74,12 @@ pub fn maybe_spawn_auto_review(tool_ctx: &ToolContext, config: &QueryConfig) {
     if changes.is_empty() {
         return;
     }
+    let areas = selected_review_areas(&changes);
+    if let Some(status) = build_start_notification(&areas, &changes) {
+        notifier.notify(status);
+    }
 
-    for area in selected_review_areas(&changes) {
+    for area in areas {
         spawn_review_agent(area, changes.clone(), tool_ctx, config, notifier.clone());
     }
 }
@@ -118,6 +123,11 @@ fn spawn_review_agent(
                     &task_id,
                     TaskStatus::Failed(format!("client init failed: {}", err)),
                 );
+                notifier.notify(build_failure_notification(
+                    area,
+                    &changes,
+                    &format!("client init failed: {}", err),
+                ));
                 warn!(area = area.id, error = %err, "Auto-review client init failed");
                 return;
             }
@@ -254,7 +264,14 @@ fn build_completion_notification(
 ) -> Option<String> {
     let trimmed = report.trim();
     if trimmed.is_empty() || trimmed.starts_with("NO_REVIEW_NEEDED:") {
-        return None;
+        return Some(format!(
+            "{AUTO_REVIEW_STATUS_PREFIX}Background review finished for {} with no actionable findings.",
+            summarize_paths(changes)
+        ));
+    }
+
+    if trimmed.starts_with("[Agent error:") || trimmed.starts_with("[Agent stopped:") {
+        return Some(build_failure_notification(area, changes, trimmed));
     }
 
     let mut note = format!(
@@ -270,6 +287,39 @@ fn build_completion_notification(
     }
 
     Some(note)
+}
+
+fn build_start_notification(
+    areas: &[&'static ReviewArea],
+    changes: &[ReviewableChange],
+) -> Option<String> {
+    if areas.is_empty() || changes.is_empty() {
+        return None;
+    }
+
+    let focus = areas
+        .iter()
+        .map(|area| area.label.to_ascii_lowercase())
+        .collect::<Vec<_>>()
+        .join(", ");
+
+    Some(format!(
+        "{AUTO_REVIEW_STATUS_PREFIX}Running background review ({focus}) for {}.",
+        summarize_paths(changes)
+    ))
+}
+
+fn build_failure_notification(
+    area: &ReviewArea,
+    changes: &[ReviewableChange],
+    reason: &str,
+) -> String {
+    format!(
+        "{AUTO_REVIEW_STATUS_PREFIX}Background review ({}) failed for {}: {}",
+        area.label.to_ascii_lowercase(),
+        summarize_paths(changes),
+        reason.trim()
+    )
 }
 
 fn summarize_paths(changes: &[ReviewableChange]) -> String {
@@ -622,11 +672,50 @@ mod tests {
             executable: true,
         }];
 
-        assert!(build_completion_notification(
+        let note = build_completion_notification(
             &REVIEW_AREAS[0],
             &changes,
             "NO_REVIEW_NEEDED: formatting only"
         )
-        .is_none());
+        .expect("false positives should still produce a UI-only status");
+
+        assert!(note.starts_with(AUTO_REVIEW_STATUS_PREFIX));
+        assert!(note.contains("no actionable findings"));
+    }
+
+    #[test]
+    fn emits_start_status_when_review_is_spawned() {
+        let changes = vec![ReviewableChange {
+            relative_path: "index.html".to_string(),
+            excerpt: "...".to_string(),
+            executable: false,
+        }];
+
+        let note = build_start_notification(&[&REVIEW_AREAS[0], &REVIEW_AREAS[2]], &changes)
+            .expect("start notification should be generated for reviewable changes");
+
+        assert!(note.starts_with(AUTO_REVIEW_STATUS_PREFIX));
+        assert!(note.contains("correctness, architecture"));
+        assert!(note.contains("index.html"));
+    }
+
+    #[test]
+    fn turns_agent_errors_into_ui_only_statuses() {
+        let changes = vec![ReviewableChange {
+            relative_path: "index.html".to_string(),
+            excerpt: "...".to_string(),
+            executable: false,
+        }];
+
+        let note = build_completion_notification(
+            &REVIEW_AREAS[2],
+            &changes,
+            "[Agent error: Authentication error: missing key]",
+        )
+        .expect("agent failures should still surface as UI status");
+
+        assert!(note.starts_with(AUTO_REVIEW_STATUS_PREFIX));
+        assert!(note.contains("failed for index.html"));
+        assert!(note.contains("Authentication error"));
     }
 }

@@ -26,7 +26,11 @@ pub async fn bootstrap_if_needed(
     model_explicit: bool,
     api_key_explicit: bool,
 ) -> Result<()> {
-    let explicit_freellmapi = matches!(config.provider.as_deref(), Some(FREELLMAPI_PROVIDER_ID));
+    let explicit_freellmapi_provider =
+        matches!(config.provider.as_deref(), Some(FREELLMAPI_PROVIDER_ID));
+    let explicit_freellmapi_model =
+        matches!(config.model.as_deref(), Some(model) if model.starts_with("freellmapi/"));
+    let explicit_freellmapi = explicit_freellmapi_provider || explicit_freellmapi_model;
     let model_is_auto = matches!(config.model.as_deref(), Some("auto"));
     let should_default = !provider_explicit && (!model_explicit || model_is_auto);
 
@@ -50,7 +54,7 @@ pub async fn bootstrap_if_needed(
                 config.api_key = None;
             }
 
-            if should_default {
+            if should_default || explicit_freellmapi_model {
                 config.provider = Some(FREELLMAPI_PROVIDER_ID.to_string());
             }
         }

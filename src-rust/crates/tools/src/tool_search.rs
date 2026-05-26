@@ -39,7 +39,7 @@ struct ToolEntry {
 static TOOL_CATALOG: &[ToolEntry] = &[
     ToolEntry {
         name: "Bash",
-        description: "Execute shell commands",
+        description: "Execute shell commands; on Windows prefer PowerShell unless you explicitly need cmd/bash-style behavior",
         keywords: &["shell", "run", "command", "exec", "terminal"],
     },
     ToolEntry {
@@ -109,8 +109,8 @@ static TOOL_CATALOG: &[ToolEntry] = &[
     },
     ToolEntry {
         name: "PowerShell",
-        description: "Execute PowerShell commands",
-        keywords: &["powershell", "windows", "ps", "command"],
+        description: "Execute Windows-native PowerShell commands",
+        keywords: &["powershell", "windows", "ps", "command", "native", "pwsh"],
     },
     ToolEntry {
         name: "CronCreate",

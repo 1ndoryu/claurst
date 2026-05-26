@@ -340,7 +340,7 @@ mod tests {
     use claurst_core::config::Config;
     use claurst_core::cost::CostTracker;
     use claurst_core::file_history::FileHistory;
-    use claurst_core::types::{ContentBlock, Role, ToolResultContent};
+    use claurst_core::types::{ContentBlock, Role, ToolResultContent, UsageInfo};
     use dialogs::PermissionRequest;
     use notifications::NotificationKind;
     use ratatui::{backend::TestBackend, buffer::Buffer, layout::Rect, Terminal};
@@ -1336,6 +1336,42 @@ mod tests {
     }
 
     #[test]
+    fn test_message_start_tracks_routed_model_for_freellmapi() {
+        let mut app = make_app();
+        app.config.provider = Some("freellmapi".to_string());
+        app.model_name = "freellmapi/auto".to_string();
+        app.push_message(claurst_core::types::Message::user("hello".to_string()));
+
+        app.handle_query_event(claurst_query::QueryEvent::Stream(
+            claurst_api::AnthropicStreamEvent::MessageStart {
+                id: "msg-1".to_string(),
+                model: "gemini-2.5-pro".to_string(),
+                usage: UsageInfo::default(),
+            },
+        ));
+
+        assert_eq!(app.model_name, "freellmapi/auto");
+        assert_eq!(
+            app.routed_model_name.as_deref(),
+            Some("freellmapi/gemini-2.5-pro")
+        );
+        assert_eq!(
+            app.active_model_name_for_display(),
+            "freellmapi/gemini-2.5-pro"
+        );
+    }
+
+    #[test]
+    fn test_new_user_turn_clears_previous_routed_model() {
+        let mut app = make_app();
+        app.routed_model_name = Some("freellmapi/gemini-2.5-pro".to_string());
+
+        app.push_message(claurst_core::types::Message::user("next".to_string()));
+
+        assert!(app.routed_model_name.is_none());
+    }
+
+    #[test]
     fn test_turn_complete_flushes_streaming_text() {
         let mut app = make_app();
         app.is_streaming = true;
@@ -1370,7 +1406,7 @@ mod tests {
     }
 
     #[test]
-    fn test_render_app_transcript_uses_turn_metadata_without_legacy_glyph() {
+    fn test_render_app_transcript_renders_interrupted_turn_metadata_without_legacy_glyph() {
         let backend = TestBackend::new(120, 30);
         let mut terminal = Terminal::new(backend).unwrap();
         let mut app = make_app();
@@ -1378,6 +1414,7 @@ mod tests {
         app.push_message(claurst_core::types::Message::assistant(
             "hi there".to_string(),
         ));
+        app.turn_metadata[0].interrupted = true;
 
         terminal
             .draw(|frame| crate::render::render_app(frame, &app))
@@ -1393,7 +1430,7 @@ mod tests {
             .join("");
 
         assert!(!rendered.contains("◆"));
-        assert!(rendered.contains("▣"));
+        assert!(rendered.contains("interrupted"));
     }
 
     // ---- HistorySearch --------------------------------------------------
