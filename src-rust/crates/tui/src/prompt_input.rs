@@ -80,7 +80,11 @@ pub enum VimPendingState {
     /// Received operator (d/c/y), waiting for motion.
     Operator { op: VimOperator, count: usize },
     /// Received operator then additional count digits.
-    OperatorCount { op: VimOperator, count: usize, digits: String },
+    OperatorCount {
+        op: VimOperator,
+        count: usize,
+        digits: String,
+    },
     /// Received `dg`/`cg`/`yg`, waiting for second g key.
     OperatorG { op: VimOperator, count: usize },
     /// Received `f/F/t/T`, waiting for target char.
@@ -132,7 +136,10 @@ pub enum VimFindKind {
 #[derive(Clone, Debug)]
 pub enum DotRepeatAction {
     /// Insert text at current cursor (from i, a, A, o, O, s).
-    Insert { text: String, mode_after_insert: bool },
+    Insert {
+        text: String,
+        mode_after_insert: bool,
+    },
     /// Simplified: re-delete the same number of chars.
     DeleteChars { count: usize },
     /// Change: delete + insert.
@@ -162,31 +169,51 @@ fn motion_w(text: &str, cursor: usize) -> usize {
     let rest = &text[cursor..];
     let chars: Vec<char> = rest.chars().collect();
     let n = chars.len();
-    if n == 0 { return cursor; }
+    if n == 0 {
+        return cursor;
+    }
     let mut i = 0;
     if is_word_char(chars[0]) {
-        while i < n && is_word_char(chars[i]) { i += 1; }
+        while i < n && is_word_char(chars[i]) {
+            i += 1;
+        }
     } else if !chars[0].is_whitespace() {
-        while i < n && !is_word_char(chars[i]) && !chars[i].is_whitespace() { i += 1; }
+        while i < n && !is_word_char(chars[i]) && !chars[i].is_whitespace() {
+            i += 1;
+        }
     }
-    while i < n && chars[i].is_whitespace() { i += 1; }
+    while i < n && chars[i].is_whitespace() {
+        i += 1;
+    }
     cursor + char_idx_to_byte(rest, i)
 }
 
 /// `b` — start of previous word.
 fn motion_b(text: &str, cursor: usize) -> usize {
-    if cursor == 0 { return 0; }
+    if cursor == 0 {
+        return 0;
+    }
     let before = &text[..cursor];
     let chars: Vec<char> = before.chars().collect();
     let n = chars.len();
-    if n == 0 { return 0; }
+    if n == 0 {
+        return 0;
+    }
     let mut i = n;
-    while i > 0 && chars[i - 1].is_whitespace() { i -= 1; }
-    if i == 0 { return 0; }
+    while i > 0 && chars[i - 1].is_whitespace() {
+        i -= 1;
+    }
+    if i == 0 {
+        return 0;
+    }
     if is_word_char(chars[i - 1]) {
-        while i > 0 && is_word_char(chars[i - 1]) { i -= 1; }
+        while i > 0 && is_word_char(chars[i - 1]) {
+            i -= 1;
+        }
     } else {
-        while i > 0 && !is_word_char(chars[i - 1]) && !chars[i - 1].is_whitespace() { i -= 1; }
+        while i > 0 && !is_word_char(chars[i - 1]) && !chars[i - 1].is_whitespace() {
+            i -= 1;
+        }
     }
     char_idx_to_byte(before, i)
 }
@@ -198,16 +225,22 @@ fn motion_e(text: &str, cursor: usize) -> usize {
         .map(|(b, c)| (cursor + b, c))
         .collect();
     let n = chars.len();
-    if n == 0 { return cursor; }
+    if n == 0 {
+        return cursor;
+    }
     let at_end = n == 1
         || chars[1].1.is_whitespace()
         || is_word_char(chars[0].1) != is_word_char(chars[1].1);
     let mut i = 0;
     if at_end {
         i = 1;
-        while i < n && chars[i].1.is_whitespace() { i += 1; }
+        while i < n && chars[i].1.is_whitespace() {
+            i += 1;
+        }
     }
-    if i >= n { return cursor; }
+    if i >= n {
+        return cursor;
+    }
     let wc = is_word_char(chars[i].1);
     while i + 1 < n && !chars[i + 1].1.is_whitespace() && is_word_char(chars[i + 1].1) == wc {
         i += 1;
@@ -221,23 +254,35 @@ fn motion_W(text: &str, cursor: usize) -> usize {
     let rest = &text[cursor..];
     let chars: Vec<char> = rest.chars().collect();
     let n = chars.len();
-    if n == 0 { return cursor; }
+    if n == 0 {
+        return cursor;
+    }
     let mut i = 0;
-    while i < n && !chars[i].is_whitespace() { i += 1; }
-    while i < n && chars[i].is_whitespace() { i += 1; }
+    while i < n && !chars[i].is_whitespace() {
+        i += 1;
+    }
+    while i < n && chars[i].is_whitespace() {
+        i += 1;
+    }
     cursor + char_idx_to_byte(rest, i)
 }
 
 /// `B` — start of previous WORD.
 #[allow(non_snake_case)]
 fn motion_B(text: &str, cursor: usize) -> usize {
-    if cursor == 0 { return 0; }
+    if cursor == 0 {
+        return 0;
+    }
     let before = &text[..cursor];
     let chars: Vec<char> = before.chars().collect();
     let n = chars.len();
     let mut i = n;
-    while i > 0 && chars[i - 1].is_whitespace() { i -= 1; }
-    while i > 0 && !chars[i - 1].is_whitespace() { i -= 1; }
+    while i > 0 && chars[i - 1].is_whitespace() {
+        i -= 1;
+    }
+    while i > 0 && !chars[i - 1].is_whitespace() {
+        i -= 1;
+    }
     char_idx_to_byte(before, i)
 }
 
@@ -249,15 +294,23 @@ fn motion_E(text: &str, cursor: usize) -> usize {
         .map(|(b, c)| (cursor + b, c))
         .collect();
     let n = chars.len();
-    if n == 0 { return cursor; }
+    if n == 0 {
+        return cursor;
+    }
     let at_end = n == 1 || chars[1].1.is_whitespace();
     let mut i = 0;
     if at_end {
         i = 1;
-        while i < n && chars[i].1.is_whitespace() { i += 1; }
+        while i < n && chars[i].1.is_whitespace() {
+            i += 1;
+        }
     }
-    if i >= n { return cursor; }
-    while i + 1 < n && !chars[i + 1].1.is_whitespace() { i += 1; }
+    if i >= n {
+        return cursor;
+    }
+    while i + 1 < n && !chars[i + 1].1.is_whitespace() {
+        i += 1;
+    }
     chars[i].0
 }
 
@@ -282,7 +335,9 @@ fn motion_G(text: &str) -> usize {
 
 /// `gg` / line-N — go to start of line `line_num` (1-indexed; 0 or 1 → start of text).
 fn motion_gg(text: &str, line_num: usize) -> usize {
-    if line_num <= 1 { return 0; }
+    if line_num <= 1 {
+        return 0;
+    }
     let mut line = 1usize;
     for (b, c) in text.char_indices() {
         if c == '\n' {
@@ -305,7 +360,10 @@ fn motion_find_char(
 ) -> Option<usize> {
     match kind {
         VimFindKind::F | VimFindKind::T => {
-            let search_start = text[cursor..].char_indices().nth(1).map(|(b, _)| cursor + b)?;
+            let search_start = text[cursor..]
+                .char_indices()
+                .nth(1)
+                .map(|(b, _)| cursor + b)?;
             let mut hits = 0usize;
             for (b, c) in text[search_start..].char_indices() {
                 if c == target {
@@ -332,7 +390,11 @@ fn motion_find_char(
                     hits += 1;
                     if hits == count {
                         if matches!(kind, VimFindKind::BigT) {
-                            return text[b..].char_indices().nth(1).map(|(nb, _)| b + nb).or(Some(cursor));
+                            return text[b..]
+                                .char_indices()
+                                .nth(1)
+                                .map(|(nb, _)| b + nb)
+                                .or(Some(cursor));
                         }
                         return Some(b);
                     }
@@ -345,16 +407,16 @@ fn motion_find_char(
 
 /// Convert text region to uppercase.
 fn uppercase_region(text: &str) -> String {
-    text.chars().map(|c| {
-        c.to_uppercase().next().unwrap_or(c)
-    }).collect()
+    text.chars()
+        .map(|c| c.to_uppercase().next().unwrap_or(c))
+        .collect()
 }
 
 /// Convert text region to lowercase.
 fn lowercase_region(text: &str) -> String {
-    text.chars().map(|c| {
-        c.to_lowercase().next().unwrap_or(c)
-    }).collect()
+    text.chars()
+        .map(|c| c.to_lowercase().next().unwrap_or(c))
+        .collect()
 }
 
 /// Apply an operator (d/c/y/gU/gu) to the range [from, to) in text.
@@ -375,7 +437,12 @@ fn apply_operator_range(
         VimOperator::Yank => (text.to_string(), from),
         VimOperator::Delete => {
             let new_text = format!("{}{}", &text[..from], &text[to..]);
-            let new_cursor = from.min(new_text.len().saturating_sub(if new_text.is_empty() { 0 } else { 1 }));
+            let new_cursor =
+                from.min(
+                    new_text
+                        .len()
+                        .saturating_sub(if new_text.is_empty() { 0 } else { 1 }),
+                );
             (new_text, new_cursor)
         }
         VimOperator::Change => {
@@ -419,21 +486,17 @@ pub fn apply_vim_key(
     }
 
     match std::mem::replace(pending, VimPendingState::None) {
-        VimPendingState::None => {
-            vim_idle(mode, text, cursor, key, yank_buf, pending, last_find)
-        }
-        VimPendingState::Count { digits } => {
-            vim_count(mode, text, cursor, key, yank_buf, pending, last_find, digits)
-        }
-        VimPendingState::G { count } => {
-            vim_g(text, cursor, key, pending, count)
-        }
-        VimPendingState::Operator { op, count } => {
-            vim_operator(mode, text, cursor, key, yank_buf, pending, last_find, op, count)
-        }
-        VimPendingState::OperatorCount { op, count, digits } => {
-            vim_operator_count(mode, text, cursor, key, yank_buf, pending, last_find, op, count, digits)
-        }
+        VimPendingState::None => vim_idle(mode, text, cursor, key, yank_buf, pending, last_find),
+        VimPendingState::Count { digits } => vim_count(
+            mode, text, cursor, key, yank_buf, pending, last_find, digits,
+        ),
+        VimPendingState::G { count } => vim_g(text, cursor, key, pending, count),
+        VimPendingState::Operator { op, count } => vim_operator(
+            mode, text, cursor, key, yank_buf, pending, last_find, op, count,
+        ),
+        VimPendingState::OperatorCount { op, count, digits } => vim_operator_count(
+            mode, text, cursor, key, yank_buf, pending, last_find, op, count, digits,
+        ),
         VimPendingState::OperatorG { op, count } => {
             vim_operator_g(mode, text, cursor, key, yank_buf, op, count)
         }
@@ -453,13 +516,23 @@ pub fn apply_vim_key(
                 let mut modified = false;
                 let mut pos = *cursor;
                 for _ in 0..count.max(1) {
-                    if pos >= text.len() { break; }
-                    let clen = text[pos..].chars().next().map(|ch| ch.len_utf8()).unwrap_or(1);
+                    if pos >= text.len() {
+                        break;
+                    }
+                    let clen = text[pos..]
+                        .chars()
+                        .next()
+                        .map(|ch| ch.len_utf8())
+                        .unwrap_or(1);
                     text.replace_range(pos..pos + clen, &c.to_string());
                     pos += c.len_utf8();
                     modified = true;
                 }
-                *cursor = (*cursor).min(text.len().saturating_sub(if text.is_empty() { 0 } else { 1 }));
+                *cursor =
+                    (*cursor).min(
+                        text.len()
+                            .saturating_sub(if text.is_empty() { 0 } else { 1 }),
+                    );
                 modified
             } else {
                 false
@@ -472,13 +545,17 @@ pub fn apply_vim_key(
                 let mut new_lines: Vec<String> = text.split('\n').map(|s| s.to_string()).collect();
                 for i in 0..count.max(1) {
                     let idx = current_line + i;
-                    if idx >= new_lines.len() { break; }
+                    if idx >= new_lines.len() {
+                        break;
+                    }
                     if dir == '>' {
                         new_lines[idx] = format!("{}{}", indent, new_lines[idx]);
                     } else if new_lines[idx].starts_with(indent) {
                         new_lines[idx] = new_lines[idx][indent.len()..].to_string();
                     } else {
-                        let trimmed = new_lines[idx].trim_start_matches('\t').trim_start_matches(' ');
+                        let trimmed = new_lines[idx]
+                            .trim_start_matches('\t')
+                            .trim_start_matches(' ');
                         new_lines[idx] = trimmed.to_string();
                     }
                 }
@@ -513,7 +590,9 @@ fn vim_idle(
     if key.len() == 1 {
         let ch = key.chars().next().unwrap();
         if ch.is_ascii_digit() && ch != '0' {
-            *pending = VimPendingState::Count { digits: key.to_string() };
+            *pending = VimPendingState::Count {
+                digits: key.to_string(),
+            };
             return false;
         }
     }
@@ -533,7 +612,9 @@ fn vim_count(
     if key.len() == 1 && key.chars().next().unwrap().is_ascii_digit() {
         let new_digits = format!("{}{}", digits, key);
         let count: usize = new_digits.parse().unwrap_or(10000).min(10000);
-        *pending = VimPendingState::Count { digits: count.to_string() };
+        *pending = VimPendingState::Count {
+            digits: count.to_string(),
+        };
         return false;
     }
     let count: usize = digits.parse().unwrap_or(1);
@@ -554,26 +635,47 @@ fn vim_normal(
     let n = count.max(1);
     match key {
         // ---- Mode transitions ----
-        "i" => { *mode = VimMode::Insert; false }
+        "i" => {
+            *mode = VimMode::Insert;
+            false
+        }
         "a" => {
             *mode = VimMode::Insert;
             if *cursor < text.len() {
-                *cursor = text[*cursor..].char_indices().nth(1).map(|(b, _)| *cursor + b).unwrap_or(text.len());
+                *cursor = text[*cursor..]
+                    .char_indices()
+                    .nth(1)
+                    .map(|(b, _)| *cursor + b)
+                    .unwrap_or(text.len());
             }
             false
         }
-        "I" => { *mode = VimMode::Insert; *cursor = motion_first_nonblank(text, *cursor); false }
-        "A" => {
+        "I" => {
             *mode = VimMode::Insert;
-            *cursor = text[*cursor..].find('\n').map(|p| *cursor + p).unwrap_or(text.len());
+            *cursor = motion_first_nonblank(text, *cursor);
             false
         }
-        "v" => { *mode = VimMode::Visual; false }
+        "A" => {
+            *mode = VimMode::Insert;
+            *cursor = text[*cursor..]
+                .find('\n')
+                .map(|p| *cursor + p)
+                .unwrap_or(text.len());
+            false
+        }
+        "v" => {
+            *mode = VimMode::Visual;
+            false
+        }
         // ---- Simple motions ----
         "h" => {
             for _ in 0..n {
                 if *cursor > 0 {
-                    let prev = text[..*cursor].char_indices().last().map(|(b, _)| b).unwrap_or(0);
+                    let prev = text[..*cursor]
+                        .char_indices()
+                        .last()
+                        .map(|(b, _)| b)
+                        .unwrap_or(0);
                     *cursor = prev;
                 }
             }
@@ -582,64 +684,177 @@ fn vim_normal(
         "l" => {
             for _ in 0..n {
                 if *cursor < text.len() {
-                    *cursor = text[*cursor..].char_indices().nth(1).map(|(b, _)| *cursor + b).unwrap_or(text.len());
+                    *cursor = text[*cursor..]
+                        .char_indices()
+                        .nth(1)
+                        .map(|(b, _)| *cursor + b)
+                        .unwrap_or(text.len());
                 }
             }
             false
         }
-        "0" => { *cursor = text[..*cursor].rfind('\n').map(|p| p + 1).unwrap_or(0); false }
-        "^" => { *cursor = motion_first_nonblank(text, *cursor); false }
-        "$" => { *cursor = text[*cursor..].find('\n').map(|p| *cursor + p).unwrap_or(text.len()); false }
-        "w" => { for _ in 0..n { *cursor = motion_w(text, *cursor); } false }
-        "b" => { for _ in 0..n { *cursor = motion_b(text, *cursor); } false }
-        "e" => { for _ in 0..n { *cursor = motion_e(text, *cursor); } false }
-        "W" => { for _ in 0..n { *cursor = motion_W(text, *cursor); } false }
-        "B" => { for _ in 0..n { *cursor = motion_B(text, *cursor); } false }
-        "E" => { for _ in 0..n { *cursor = motion_E(text, *cursor); } false }
-        "G" => {
-            *cursor = if n == 1 { motion_G(text) } else { motion_gg(text, n) };
+        "0" => {
+            *cursor = text[..*cursor].rfind('\n').map(|p| p + 1).unwrap_or(0);
             false
         }
-        "g" => { *pending = VimPendingState::G { count: n }; false }
+        "^" => {
+            *cursor = motion_first_nonblank(text, *cursor);
+            false
+        }
+        "$" => {
+            *cursor = text[*cursor..]
+                .find('\n')
+                .map(|p| *cursor + p)
+                .unwrap_or(text.len());
+            false
+        }
+        "w" => {
+            for _ in 0..n {
+                *cursor = motion_w(text, *cursor);
+            }
+            false
+        }
+        "b" => {
+            for _ in 0..n {
+                *cursor = motion_b(text, *cursor);
+            }
+            false
+        }
+        "e" => {
+            for _ in 0..n {
+                *cursor = motion_e(text, *cursor);
+            }
+            false
+        }
+        "W" => {
+            for _ in 0..n {
+                *cursor = motion_W(text, *cursor);
+            }
+            false
+        }
+        "B" => {
+            for _ in 0..n {
+                *cursor = motion_B(text, *cursor);
+            }
+            false
+        }
+        "E" => {
+            for _ in 0..n {
+                *cursor = motion_E(text, *cursor);
+            }
+            false
+        }
+        "G" => {
+            *cursor = if n == 1 {
+                motion_G(text)
+            } else {
+                motion_gg(text, n)
+            };
+            false
+        }
+        "g" => {
+            *pending = VimPendingState::G { count: n };
+            false
+        }
         // ---- Find motions ----
-        "f" => { *pending = VimPendingState::Find { kind: VimFindKind::F, count: n }; false }
-        "F" => { *pending = VimPendingState::Find { kind: VimFindKind::BigF, count: n }; false }
-        "t" => { *pending = VimPendingState::Find { kind: VimFindKind::T, count: n }; false }
-        "T" => { *pending = VimPendingState::Find { kind: VimFindKind::BigT, count: n }; false }
+        "f" => {
+            *pending = VimPendingState::Find {
+                kind: VimFindKind::F,
+                count: n,
+            };
+            false
+        }
+        "F" => {
+            *pending = VimPendingState::Find {
+                kind: VimFindKind::BigF,
+                count: n,
+            };
+            false
+        }
+        "t" => {
+            *pending = VimPendingState::Find {
+                kind: VimFindKind::T,
+                count: n,
+            };
+            false
+        }
+        "T" => {
+            *pending = VimPendingState::Find {
+                kind: VimFindKind::BigT,
+                count: n,
+            };
+            false
+        }
         ";" => {
             if let Some((kind, c)) = *last_find {
-                if let Some(pos) = motion_find_char(text, *cursor, c, kind, n) { *cursor = pos; }
+                if let Some(pos) = motion_find_char(text, *cursor, c, kind, n) {
+                    *cursor = pos;
+                }
             }
             false
         }
         "," => {
             if let Some((kind, c)) = *last_find {
                 let rev = match kind {
-                    VimFindKind::F => VimFindKind::BigF, VimFindKind::BigF => VimFindKind::F,
-                    VimFindKind::T => VimFindKind::BigT, VimFindKind::BigT => VimFindKind::T,
+                    VimFindKind::F => VimFindKind::BigF,
+                    VimFindKind::BigF => VimFindKind::F,
+                    VimFindKind::T => VimFindKind::BigT,
+                    VimFindKind::BigT => VimFindKind::T,
                 };
-                if let Some(pos) = motion_find_char(text, *cursor, c, rev, n) { *cursor = pos; }
+                if let Some(pos) = motion_find_char(text, *cursor, c, rev, n) {
+                    *cursor = pos;
+                }
             }
             false
         }
         // ---- Operators ----
-        "d" => { *pending = VimPendingState::Operator { op: VimOperator::Delete, count: n }; false }
-        "c" => { *pending = VimPendingState::Operator { op: VimOperator::Change, count: n }; false }
-        "y" => { *pending = VimPendingState::Operator { op: VimOperator::Yank, count: n }; false }
+        "d" => {
+            *pending = VimPendingState::Operator {
+                op: VimOperator::Delete,
+                count: n,
+            };
+            false
+        }
+        "c" => {
+            *pending = VimPendingState::Operator {
+                op: VimOperator::Change,
+                count: n,
+            };
+            false
+        }
+        "y" => {
+            *pending = VimPendingState::Operator {
+                op: VimOperator::Yank,
+                count: n,
+            };
+            false
+        }
         // ---- Single-char delete/change shortcuts ----
         "x" => {
             if *cursor < text.len() {
-                let clen = text[*cursor..].chars().next().map(|c| c.len_utf8()).unwrap_or(1);
+                let clen = text[*cursor..]
+                    .chars()
+                    .next()
+                    .map(|c| c.len_utf8())
+                    .unwrap_or(1);
                 *yank_buf = text[*cursor..*cursor + clen].to_string();
                 text.drain(*cursor..*cursor + clen);
-                *cursor = (*cursor).min(text.len().saturating_sub(if text.is_empty() { 0 } else { 1 }));
+                *cursor =
+                    (*cursor).min(
+                        text.len()
+                            .saturating_sub(if text.is_empty() { 0 } else { 1 }),
+                    );
                 return true;
             }
             false
         }
         "X" => {
             if *cursor > 0 {
-                let prev = text[..*cursor].char_indices().last().map(|(b, _)| b).unwrap_or(0);
+                let prev = text[..*cursor]
+                    .char_indices()
+                    .last()
+                    .map(|(b, _)| b)
+                    .unwrap_or(0);
                 *yank_buf = text[prev..*cursor].to_string();
                 text.drain(prev..*cursor);
                 *cursor = prev;
@@ -648,7 +863,10 @@ fn vim_normal(
             false
         }
         "D" => {
-            let end = text[*cursor..].find('\n').map(|p| *cursor + p).unwrap_or(text.len());
+            let end = text[*cursor..]
+                .find('\n')
+                .map(|p| *cursor + p)
+                .unwrap_or(text.len());
             if end > *cursor {
                 *yank_buf = text[*cursor..end].to_string();
                 text.drain(*cursor..end);
@@ -657,7 +875,10 @@ fn vim_normal(
             false
         }
         "C" => {
-            let end = text[*cursor..].find('\n').map(|p| *cursor + p).unwrap_or(text.len());
+            let end = text[*cursor..]
+                .find('\n')
+                .map(|p| *cursor + p)
+                .unwrap_or(text.len());
             *yank_buf = text[*cursor..end].to_string();
             text.drain(*cursor..end);
             *mode = VimMode::Insert;
@@ -665,7 +886,11 @@ fn vim_normal(
         }
         "s" => {
             if *cursor < text.len() {
-                let clen = text[*cursor..].chars().next().map(|c| c.len_utf8()).unwrap_or(1);
+                let clen = text[*cursor..]
+                    .chars()
+                    .next()
+                    .map(|c| c.len_utf8())
+                    .unwrap_or(1);
                 *yank_buf = text[*cursor..*cursor + clen].to_string();
                 text.drain(*cursor..*cursor + clen);
                 *mode = VimMode::Insert;
@@ -675,7 +900,10 @@ fn vim_normal(
         }
         "S" => {
             let ls = text[..*cursor].rfind('\n').map(|p| p + 1).unwrap_or(0);
-            let le = text[*cursor..].find('\n').map(|p| *cursor + p).unwrap_or(text.len());
+            let le = text[*cursor..]
+                .find('\n')
+                .map(|p| *cursor + p)
+                .unwrap_or(text.len());
             *yank_buf = text[ls..le].to_string();
             text.drain(ls..le);
             *cursor = ls;
@@ -685,7 +913,10 @@ fn vim_normal(
         // ---- Yank shortcuts ----
         "Y" | "yy" => {
             let ls = text[..*cursor].rfind('\n').map(|p| p + 1).unwrap_or(0);
-            let le = text[*cursor..].find('\n').map(|p| *cursor + p + 1).unwrap_or(text.len());
+            let le = text[*cursor..]
+                .find('\n')
+                .map(|p| *cursor + p + 1)
+                .unwrap_or(text.len());
             *yank_buf = text[ls..le].to_string();
             false
         }
@@ -694,8 +925,14 @@ fn vim_normal(
             if !yank_buf.is_empty() {
                 let buf = yank_buf.clone();
                 let insert_pos = if *cursor < text.len() {
-                    text[*cursor..].char_indices().nth(1).map(|(b, _)| *cursor + b).unwrap_or(text.len())
-                } else { text.len() };
+                    text[*cursor..]
+                        .char_indices()
+                        .nth(1)
+                        .map(|(b, _)| *cursor + b)
+                        .unwrap_or(text.len())
+                } else {
+                    text.len()
+                };
                 text.insert_str(insert_pos, &buf);
                 *cursor = (insert_pos + buf.len()).saturating_sub(1);
                 return true;
@@ -712,27 +949,50 @@ fn vim_normal(
             false
         }
         // ---- Replace ----
-        "r" => { *pending = VimPendingState::Replace { count: n }; false }
+        "r" => {
+            *pending = VimPendingState::Replace { count: n };
+            false
+        }
         // ---- Toggle case ----
         "~" => {
             if *cursor < text.len() {
-                let clen = text[*cursor..].chars().next().map(|c| c.len_utf8()).unwrap_or(1);
+                let clen = text[*cursor..]
+                    .chars()
+                    .next()
+                    .map(|c| c.len_utf8())
+                    .unwrap_or(1);
                 let old: String = text[*cursor..*cursor + clen].to_string();
-                let new: String = old.chars().map(|c| {
-                    if c.is_uppercase() { c.to_lowercase().next().unwrap_or(c) }
-                    else { c.to_uppercase().next().unwrap_or(c) }
-                }).collect();
+                let new: String = old
+                    .chars()
+                    .map(|c| {
+                        if c.is_uppercase() {
+                            c.to_lowercase().next().unwrap_or(c)
+                        } else {
+                            c.to_uppercase().next().unwrap_or(c)
+                        }
+                    })
+                    .collect();
                 text.replace_range(*cursor..*cursor + clen, &new);
                 if *cursor < text.len() {
-                    *cursor = text[*cursor..].char_indices().nth(1).map(|(b, _)| *cursor + b).unwrap_or(text.len());
+                    *cursor = text[*cursor..]
+                        .char_indices()
+                        .nth(1)
+                        .map(|(b, _)| *cursor + b)
+                        .unwrap_or(text.len());
                 }
                 return true;
             }
             false
         }
         // ---- Indent ----
-        ">" => { *pending = VimPendingState::Indent { dir: '>', count: n }; false }
-        "<" => { *pending = VimPendingState::Indent { dir: '<', count: n }; false }
+        ">" => {
+            *pending = VimPendingState::Indent { dir: '>', count: n };
+            false
+        }
+        "<" => {
+            *pending = VimPendingState::Indent { dir: '<', count: n };
+            false
+        }
         // ---- Join lines ----
         "J" => {
             if let Some(nl_pos) = text[*cursor..].find('\n').map(|p| *cursor + p) {
@@ -746,7 +1006,10 @@ fn vim_normal(
         }
         // ---- Open line ----
         "o" => {
-            let le = text[*cursor..].find('\n').map(|p| *cursor + p).unwrap_or(text.len());
+            let le = text[*cursor..]
+                .find('\n')
+                .map(|p| *cursor + p)
+                .unwrap_or(text.len());
             text.insert(le, '\n');
             *cursor = le + 1;
             *mode = VimMode::Insert;
@@ -762,18 +1025,36 @@ fn vim_normal(
         // ---- dd/yy (multi-char fallthrough from legacy apply_vim_command) ----
         "dd" => {
             let ls = text[..*cursor].rfind('\n').map(|p| p + 1).unwrap_or(0);
-            let le = text[*cursor..].find('\n').map(|p| *cursor + p + 1).unwrap_or(text.len());
+            let le = text[*cursor..]
+                .find('\n')
+                .map(|p| *cursor + p + 1)
+                .unwrap_or(text.len());
             *yank_buf = text[ls..le].to_string();
             text.drain(ls..le);
             *cursor = ls.min(text.len());
             true
         }
         // ---- Register, marks, macros — set pending; actual work done in vim_command ----
-        "\"" => { *pending = VimPendingState::Register('\0'); false }
-        "m" => { *pending = VimPendingState::Mark; false }
-        "'" => { *pending = VimPendingState::JumpMark; false }
-        "q" => { *pending = VimPendingState::MacroRecord; false }
-        "@" => { *pending = VimPendingState::MacroReplay; false }
+        "\"" => {
+            *pending = VimPendingState::Register('\0');
+            false
+        }
+        "m" => {
+            *pending = VimPendingState::Mark;
+            false
+        }
+        "'" => {
+            *pending = VimPendingState::JumpMark;
+            false
+        }
+        "q" => {
+            *pending = VimPendingState::MacroRecord;
+            false
+        }
+        "@" => {
+            *pending = VimPendingState::MacroReplay;
+            false
+        }
         _ => false,
     }
 }
@@ -786,19 +1067,32 @@ fn vim_g(
     count: usize,
 ) -> bool {
     match key {
-        "g" => { *cursor = if count > 1 { motion_gg(text, count) } else { 0 }; false }
+        "g" => {
+            *cursor = if count > 1 { motion_gg(text, count) } else { 0 };
+            false
+        }
         "e" => {
             // `ge` — end of previous word
             for _ in 0..count.max(1) {
-                if *cursor == 0 { break; }
+                if *cursor == 0 {
+                    break;
+                }
                 let before = &text[..*cursor];
                 let chars: Vec<char> = before.chars().collect();
                 let n = chars.len();
                 let mut i = n;
-                while i > 0 && chars[i - 1].is_whitespace() { i -= 1; }
-                if i == 0 { *cursor = 0; break; }
+                while i > 0 && chars[i - 1].is_whitespace() {
+                    i -= 1;
+                }
+                if i == 0 {
+                    *cursor = 0;
+                    break;
+                }
                 let is_wc = is_word_char(chars[i - 1]);
-                while i > 1 && is_word_char(chars[i - 2]) == is_wc && !chars[i - 2].is_whitespace() { i -= 1; }
+                while i > 1 && is_word_char(chars[i - 2]) == is_wc && !chars[i - 2].is_whitespace()
+                {
+                    i -= 1;
+                }
                 *cursor = char_idx_to_byte(before, i - 1);
             }
             false
@@ -806,28 +1100,43 @@ fn vim_g(
         "E" => {
             // `gE` — end of previous WORD
             for _ in 0..count.max(1) {
-                if *cursor == 0 { break; }
+                if *cursor == 0 {
+                    break;
+                }
                 let before = &text[..*cursor];
                 let chars: Vec<char> = before.chars().collect();
                 let n = chars.len();
                 let mut i = n;
-                while i > 0 && chars[i - 1].is_whitespace() { i -= 1; }
-                while i > 1 && !chars[i - 2].is_whitespace() { i -= 1; }
+                while i > 0 && chars[i - 1].is_whitespace() {
+                    i -= 1;
+                }
+                while i > 1 && !chars[i - 2].is_whitespace() {
+                    i -= 1;
+                }
                 *cursor = char_idx_to_byte(before, i - 1);
             }
             false
         }
         "U" => {
             // `gU` — start case conversion uppercase operator
-            *pending = VimPendingState::Operator { op: VimOperator::Uppercase, count };
+            *pending = VimPendingState::Operator {
+                op: VimOperator::Uppercase,
+                count,
+            };
             false
         }
         "u" => {
             // `gu` — start case conversion lowercase operator
-            *pending = VimPendingState::Operator { op: VimOperator::Lowercase, count };
+            *pending = VimPendingState::Operator {
+                op: VimOperator::Lowercase,
+                count,
+            };
             false
         }
-        _ => { *pending = VimPendingState::None; false }
+        _ => {
+            *pending = VimPendingState::None;
+            false
+        }
     }
 }
 
@@ -857,7 +1166,10 @@ fn vim_operator(
         for _ in 0..count.max(1) {
             match text[le..].find('\n') {
                 Some(n) => le += n + 1,
-                None => { le = text.len(); break; }
+                None => {
+                    le = text.len();
+                    break;
+                }
             }
         }
         let le = le.min(text.len());
@@ -883,33 +1195,119 @@ fn vim_operator(
     }
     // Count prefix after operator (e.g. d3w)
     if key.len() == 1 && key.chars().next().unwrap().is_ascii_digit() {
-        *pending = VimPendingState::OperatorCount { op, count, digits: key.to_string() };
+        *pending = VimPendingState::OperatorCount {
+            op,
+            count,
+            digits: key.to_string(),
+        };
         return false;
     }
     // `g` prefix
-    if key == "g" { *pending = VimPendingState::OperatorG { op, count }; return false; }
+    if key == "g" {
+        *pending = VimPendingState::OperatorG { op, count };
+        return false;
+    }
     // Simple motions
     let target = match key {
-        "h" => { let mut p = *cursor; for _ in 0..count.max(1) { if p > 0 { p -= 1; } } p }
-        "l" => { let mut p = *cursor; for _ in 0..count.max(1) { if p < text.len() { p = text[p..].char_indices().nth(1).map(|(b,_)| p+b).unwrap_or(text.len()); } } p }
-        "w" => { let mut p = *cursor; for _ in 0..count.max(1) { p = motion_w(text, p); } p }
-        "b" => { let mut p = *cursor; for _ in 0..count.max(1) { p = motion_b(text, p); } p }
-        "e" => { let mut p = *cursor; for _ in 0..count.max(1) { p = motion_e(text, p); } p }
-        "W" => { let mut p = *cursor; for _ in 0..count.max(1) { p = motion_W(text, p); } p }
-        "B" => { let mut p = *cursor; for _ in 0..count.max(1) { p = motion_B(text, p); } p }
-        "E" => { let mut p = *cursor; for _ in 0..count.max(1) { p = motion_E(text, p); } p }
-        "0" => text[..*cursor].rfind('\n').map(|p| p+1).unwrap_or(0),
+        "h" => {
+            let mut p = *cursor;
+            for _ in 0..count.max(1) {
+                if p > 0 {
+                    p -= 1;
+                }
+            }
+            p
+        }
+        "l" => {
+            let mut p = *cursor;
+            for _ in 0..count.max(1) {
+                if p < text.len() {
+                    p = text[p..]
+                        .char_indices()
+                        .nth(1)
+                        .map(|(b, _)| p + b)
+                        .unwrap_or(text.len());
+                }
+            }
+            p
+        }
+        "w" => {
+            let mut p = *cursor;
+            for _ in 0..count.max(1) {
+                p = motion_w(text, p);
+            }
+            p
+        }
+        "b" => {
+            let mut p = *cursor;
+            for _ in 0..count.max(1) {
+                p = motion_b(text, p);
+            }
+            p
+        }
+        "e" => {
+            let mut p = *cursor;
+            for _ in 0..count.max(1) {
+                p = motion_e(text, p);
+            }
+            p
+        }
+        "W" => {
+            let mut p = *cursor;
+            for _ in 0..count.max(1) {
+                p = motion_W(text, p);
+            }
+            p
+        }
+        "B" => {
+            let mut p = *cursor;
+            for _ in 0..count.max(1) {
+                p = motion_B(text, p);
+            }
+            p
+        }
+        "E" => {
+            let mut p = *cursor;
+            for _ in 0..count.max(1) {
+                p = motion_E(text, p);
+            }
+            p
+        }
+        "0" => text[..*cursor].rfind('\n').map(|p| p + 1).unwrap_or(0),
         "^" => motion_first_nonblank(text, *cursor),
-        "$" => text[*cursor..].find('\n').map(|p| *cursor+p).unwrap_or(text.len()),
-        "G" => if count == 1 { motion_G(text) } else { motion_gg(text, count) },
-        _ => { return false; }
+        "$" => text[*cursor..]
+            .find('\n')
+            .map(|p| *cursor + p)
+            .unwrap_or(text.len()),
+        "G" => {
+            if count == 1 {
+                motion_G(text)
+            } else {
+                motion_gg(text, count)
+            }
+        }
+        _ => {
+            return false;
+        }
     };
-    if target == *cursor { return false; }
-    let (from, to) = if target < *cursor { (target, *cursor) } else { (*cursor, target) };
+    if target == *cursor {
+        return false;
+    }
+    let (from, to) = if target < *cursor {
+        (target, *cursor)
+    } else {
+        (*cursor, target)
+    };
     // Inclusive adjustment for e, E, $
     let to_adj = if matches!(key, "e" | "E" | "$") {
-        text[to..].char_indices().nth(1).map(|(b,_)| to+b).unwrap_or(text.len())
-    } else { to };
+        text[to..]
+            .char_indices()
+            .nth(1)
+            .map(|(b, _)| to + b)
+            .unwrap_or(text.len())
+    } else {
+        to
+    };
     let (new_text, new_cursor) = apply_operator_range(op, text, from, to_adj, yank_buf, mode);
     *text = new_text;
     *cursor = new_cursor.min(text.len());
@@ -932,13 +1330,22 @@ fn vim_operator_count(
     if key.len() == 1 && key.chars().next().unwrap().is_ascii_digit() {
         let new_digits = format!("{}{}", digits, key);
         let d: usize = new_digits.parse().unwrap_or(10000).min(10000);
-        *pending = VimPendingState::OperatorCount { op, count, digits: d.to_string() };
+        *pending = VimPendingState::OperatorCount {
+            op,
+            count,
+            digits: d.to_string(),
+        };
         return false;
     }
     let motion_count: usize = digits.parse().unwrap_or(1);
     let effective = count.saturating_mul(motion_count).min(10000);
-    *pending = VimPendingState::Operator { op, count: effective };
-    vim_operator(mode, text, cursor, key, yank_buf, pending, last_find, op, effective)
+    *pending = VimPendingState::Operator {
+        op,
+        count: effective,
+    };
+    vim_operator(
+        mode, text, cursor, key, yank_buf, pending, last_find, op, effective,
+    )
 }
 
 fn vim_operator_g(
@@ -954,8 +1361,12 @@ fn vim_operator_g(
         "g" => {
             let target = if count > 1 { motion_gg(text, count) } else { 0 };
             let (from, to) = (target.min(*cursor), target.max(*cursor));
-            let to_le = text[to..].find('\n').map(|p| to+p+1).unwrap_or(text.len());
-            let (new_text, new_cursor) = apply_operator_range(op, text, from, to_le, yank_buf, mode);
+            let to_le = text[to..]
+                .find('\n')
+                .map(|p| to + p + 1)
+                .unwrap_or(text.len());
+            let (new_text, new_cursor) =
+                apply_operator_range(op, text, from, to_le, yank_buf, mode);
             *text = new_text;
             *cursor = new_cursor.min(text.len());
             op != VimOperator::Yank
@@ -976,10 +1387,14 @@ pub fn apply_vim_command(
 ) {
     match key {
         // Mode transitions
-        "i" if *mode == VimMode::Normal => { *mode = VimMode::Insert; }
+        "i" if *mode == VimMode::Normal => {
+            *mode = VimMode::Insert;
+        }
         "a" if *mode == VimMode::Normal => {
             *mode = VimMode::Insert;
-            if *cursor < text.len() { *cursor += 1; }
+            if *cursor < text.len() {
+                *cursor += 1;
+            }
         }
         "I" if *mode == VimMode::Normal => {
             *mode = VimMode::Insert;
@@ -989,28 +1404,50 @@ pub fn apply_vim_command(
             *mode = VimMode::Insert;
             *cursor = text.len();
         }
-        "Escape" => { *mode = VimMode::Normal; }
+        "Escape" => {
+            *mode = VimMode::Normal;
+        }
         // Normal mode motions
         "h" if *mode == VimMode::Normal => {
             *cursor = cursor.saturating_sub(1);
         }
         "l" if *mode == VimMode::Normal => {
-            if *cursor < text.len() { *cursor += 1; }
+            if *cursor < text.len() {
+                *cursor += 1;
+            }
         }
-        "0" if *mode == VimMode::Normal => { *cursor = 0; }
-        "$" if *mode == VimMode::Normal => { *cursor = text.len(); }
+        "0" if *mode == VimMode::Normal => {
+            *cursor = 0;
+        }
+        "$" if *mode == VimMode::Normal => {
+            *cursor = text.len();
+        }
         "w" if *mode == VimMode::Normal => {
             // Move to start of next word
             let rest = &text[*cursor..];
-            let skip_word = rest.chars().take_while(|c| c.is_alphanumeric() || *c == '_').count();
-            let skip_space = rest[skip_word..].chars().take_while(|c| c.is_whitespace()).count();
+            let skip_word = rest
+                .chars()
+                .take_while(|c| c.is_alphanumeric() || *c == '_')
+                .count();
+            let skip_space = rest[skip_word..]
+                .chars()
+                .take_while(|c| c.is_whitespace())
+                .count();
             *cursor = (*cursor + skip_word + skip_space).min(text.len());
         }
         "b" if *mode == VimMode::Normal => {
             // Move to start of previous word
             let before = &text[..*cursor];
-            let skip_space = before.chars().rev().take_while(|c| c.is_whitespace()).count();
-            let skip_word = before[..before.len() - skip_space].chars().rev().take_while(|c| c.is_alphanumeric() || *c == '_').count();
+            let skip_space = before
+                .chars()
+                .rev()
+                .take_while(|c| c.is_whitespace())
+                .count();
+            let skip_word = before[..before.len() - skip_space]
+                .chars()
+                .rev()
+                .take_while(|c| c.is_alphanumeric() || *c == '_')
+                .count();
             *cursor = cursor.saturating_sub(skip_space + skip_word);
         }
         "x" if *mode == VimMode::Normal => {
@@ -1018,7 +1455,9 @@ pub fn apply_vim_command(
             if *cursor < text.len() {
                 *yank_buf = text.chars().nth(*cursor).unwrap_or_default().to_string();
                 text.remove(*cursor);
-                if *cursor > 0 && *cursor >= text.len() { *cursor = text.len().saturating_sub(1); }
+                if *cursor > 0 && *cursor >= text.len() {
+                    *cursor = text.len().saturating_sub(1);
+                }
             }
         }
         "dd" if *mode == VimMode::Normal => {
@@ -1077,11 +1516,18 @@ pub fn compute_typeahead(
     }
 
     // Handle file references: @, @/, @~/, @src/, etc.
-    compute_file_suggestions(input, file_autocomplete_limit, file_autocomplete_show_hidden)
+    compute_file_suggestions(
+        input,
+        file_autocomplete_limit,
+        file_autocomplete_show_hidden,
+    )
 }
 
 /// Compute typeahead suggestions for slash commands only (e.g., `/help`).
-pub(crate) fn compute_slash_suggestions(input: &str, slash_commands: &[(&str, &str)]) -> Vec<TypeaheadSuggestion> {
+pub(crate) fn compute_slash_suggestions(
+    input: &str,
+    slash_commands: &[(&str, &str)],
+) -> Vec<TypeaheadSuggestion> {
     let mut suggestions = Vec::new();
 
     if let Some(cmd_prefix) = input.strip_prefix('/') {
@@ -1119,7 +1565,11 @@ pub(crate) fn compute_file_suggestions(
 
         if at_word_boundary {
             let file_prefix = &input[at_idx + 1..];
-            suggestions = suggest_files(file_prefix, file_autocomplete_limit, file_autocomplete_show_hidden);
+            suggestions = suggest_files(
+                file_prefix,
+                file_autocomplete_limit,
+                file_autocomplete_show_hidden,
+            );
         }
     }
 
@@ -1137,9 +1587,13 @@ pub(crate) fn compute_file_suggestions(
 /// - `"~/"` → files in home with names only
 /// Note: calls `fs::read_dir` synchronously on every invocation; may stall on slow/network
 /// filesystems. Consider debouncing at the call site if this becomes a problem.
-fn suggest_files(prefix: &str, max_suggestions: usize, show_hidden: bool) -> Vec<TypeaheadSuggestion> {
-    use std::path::PathBuf;
+fn suggest_files(
+    prefix: &str,
+    max_suggestions: usize,
+    show_hidden: bool,
+) -> Vec<TypeaheadSuggestion> {
     use std::fs;
+    use std::path::PathBuf;
 
     let mut suggestions = Vec::new();
 
@@ -1209,17 +1663,28 @@ fn suggest_files(prefix: &str, max_suggestions: usize, show_hidden: bool) -> Vec
                         .map(|s| s.to_string())?;
 
                     // Filter by partial name (case-insensitive)
-                    if !partial_name.is_empty() && !name.to_lowercase().starts_with(&partial_name.to_lowercase()) {
+                    if !partial_name.is_empty()
+                        && !name
+                            .to_lowercase()
+                            .starts_with(&partial_name.to_lowercase())
+                    {
                         return None;
                     }
 
                     // Filter hidden files unless user explicitly types a dot or show_hidden_files is enabled
-                    if !show_hidden && name.starts_with('.') && !partial_name.to_lowercase().starts_with('.') {
+                    if !show_hidden
+                        && name.starts_with('.')
+                        && !partial_name.to_lowercase().starts_with('.')
+                    {
                         return None;
                     }
 
                     // Detect if this is a symlink or junction link
-                    let is_symlink = entry.file_type().ok().map(|ft| ft.is_symlink()).unwrap_or(false);
+                    let is_symlink = entry
+                        .file_type()
+                        .ok()
+                        .map(|ft| ft.is_symlink())
+                        .unwrap_or(false);
                     let is_dir = path.is_dir();
 
                     Some((name, is_dir, is_symlink, path))
@@ -1248,8 +1713,7 @@ fn suggest_files(prefix: &str, max_suggestions: usize, show_hidden: bool) -> Vec
             let is_listing_mode = prefix.ends_with('/');
             let suggestion_text = if show_full_paths {
                 let full = search_dir.join(&name);
-                full.to_string_lossy().to_string()
-                    + if is_dir { "/" } else { "" }
+                full.to_string_lossy().to_string() + if is_dir { "/" } else { "" }
             } else if is_listing_mode {
                 // When listing a directory's contents, prepend the full prefix path
                 format!("{}{}{}", prefix, name, if is_dir { "/" } else { "" })
@@ -1316,10 +1780,7 @@ fn home_dir() -> Option<String> {
 /// in `paste_contents` for retrieval at submit time.  This mirrors opencode's
 /// behaviour and prevents the input box from flooding with multi-hundred-line
 /// pastes.  Single-line short strings are inserted verbatim.
-pub fn handle_paste(
-    content: &str,
-    paste_counter: &mut u32,
-) -> (String, Option<String>) {
+pub fn handle_paste(content: &str, paste_counter: &mut u32) -> (String, Option<String>) {
     let line_count = content.lines().count();
     let is_large = line_count >= 3 || content.len() > 150;
     if !is_large {
@@ -1350,7 +1811,11 @@ pub fn detect_pasted_path(text: &str) -> Option<std::path::PathBuf> {
     let unquoted = trimmed
         .strip_prefix('"')
         .and_then(|s| s.strip_suffix('"'))
-        .or_else(|| trimmed.strip_prefix('\'').and_then(|s| s.strip_suffix('\'')))
+        .or_else(|| {
+            trimmed
+                .strip_prefix('\'')
+                .and_then(|s| s.strip_suffix('\''))
+        })
         .unwrap_or(trimmed);
 
     // file:// URL — strip the scheme (skip the leading //).
@@ -1591,7 +2056,9 @@ impl PromptInputState {
 
     /// Insert a character at cursor position.
     pub fn insert_char(&mut self, c: char) {
-        if self.mode == InputMode::Readonly { return; }
+        if self.mode == InputMode::Readonly {
+            return;
+        }
         self.text.insert(self.cursor, c);
         self.cursor += c.len_utf8();
         self.update_token_estimate();
@@ -1599,13 +2066,17 @@ impl PromptInputState {
 
     /// Insert a newline (Shift+Enter).
     pub fn insert_newline(&mut self) {
-        if self.mode == InputMode::Readonly { return; }
+        if self.mode == InputMode::Readonly {
+            return;
+        }
         self.insert_char('\n');
     }
 
     /// Delete the character before cursor.
     pub fn backspace(&mut self) {
-        if self.cursor == 0 || self.mode == InputMode::Readonly { return; }
+        if self.cursor == 0 || self.mode == InputMode::Readonly {
+            return;
+        }
         let prev = self.text[..self.cursor]
             .char_indices()
             .last()
@@ -1618,7 +2089,9 @@ impl PromptInputState {
 
     /// Delete the character at cursor.
     pub fn delete(&mut self) {
-        if self.cursor >= self.text.len() || self.mode == InputMode::Readonly { return; }
+        if self.cursor >= self.text.len() || self.mode == InputMode::Readonly {
+            return;
+        }
         self.text.remove(self.cursor);
         self.update_token_estimate();
     }
@@ -1649,7 +2122,9 @@ impl PromptInputState {
 
     /// Navigate history up (older).
     pub fn history_up(&mut self) {
-        if self.history.is_empty() { return; }
+        if self.history.is_empty() {
+            return;
+        }
         match self.history_pos {
             None => {
                 self.history_draft = self.text.clone();
@@ -1690,7 +2165,8 @@ impl PromptInputState {
     pub fn paste(&mut self, content: &str) {
         let (text, stored) = handle_paste(content, &mut self.paste_counter);
         if let Some(stored_content) = stored {
-            self.paste_contents.insert(self.paste_counter, stored_content);
+            self.paste_contents
+                .insert(self.paste_counter, stored_content);
         }
         for c in text.chars() {
             self.text.insert(self.cursor, c);
@@ -1702,8 +2178,11 @@ impl PromptInputState {
 
     /// Ctrl+K: Cut from cursor to end of line and save to kill ring.
     pub fn kill_line(&mut self) {
-        if self.mode == InputMode::Readonly { return; }
-        let line_end = self.text[self.cursor..].find('\n')
+        if self.mode == InputMode::Readonly {
+            return;
+        }
+        let line_end = self.text[self.cursor..]
+            .find('\n')
             .map(|p| self.cursor + p)
             .unwrap_or(self.text.len());
 
@@ -1716,8 +2195,11 @@ impl PromptInputState {
 
     /// Ctrl+U: Cut from line start to cursor and save to kill ring.
     pub fn kill_line_backward(&mut self) {
-        if self.mode == InputMode::Readonly { return; }
-        let line_start = self.text[..self.cursor].rfind('\n')
+        if self.mode == InputMode::Readonly {
+            return;
+        }
+        let line_start = self.text[..self.cursor]
+            .rfind('\n')
             .map(|p| p + 1)
             .unwrap_or(0);
 
@@ -1731,7 +2213,9 @@ impl PromptInputState {
 
     /// Ctrl+W: Cut previous word and save to kill ring.
     pub fn kill_word_backward(&mut self) {
-        if self.mode == InputMode::Readonly || self.cursor == 0 { return; }
+        if self.mode == InputMode::Readonly || self.cursor == 0 {
+            return;
+        }
         let before = &self.text[..self.cursor];
         let chars: Vec<char> = before.chars().collect();
         let mut idx = chars.len();
@@ -1761,7 +2245,9 @@ impl PromptInputState {
 
     /// Ctrl+Y: Paste from kill ring (most recent).
     pub fn yank(&mut self) {
-        if self.mode == InputMode::Readonly { return; }
+        if self.mode == InputMode::Readonly {
+            return;
+        }
         if let Some(text) = self.kill_ring.get_current() {
             for c in text.chars() {
                 self.text.insert(self.cursor, c);
@@ -1774,13 +2260,17 @@ impl PromptInputState {
 
     /// Alt+Y: Cycle through kill ring backward.
     pub fn yank_pop(&mut self) {
-        if self.mode == InputMode::Readonly { return; }
+        if self.mode == InputMode::Readonly {
+            return;
+        }
         self.kill_ring.cycle_backward();
     }
 
     /// Alt+Backspace: Delete word backward.
     pub fn delete_word_backward(&mut self) {
-        if self.mode == InputMode::Readonly || self.cursor == 0 { return; }
+        if self.mode == InputMode::Readonly || self.cursor == 0 {
+            return;
+        }
         let before = &self.text[..self.cursor];
         let chars: Vec<char> = before.chars().collect();
         let mut idx = chars.len();
@@ -1810,7 +2300,9 @@ impl PromptInputState {
 
     /// Alt+Delete: Delete word forward.
     pub fn delete_word_forward(&mut self) {
-        if self.mode == InputMode::Readonly || self.cursor >= self.text.len() { return; }
+        if self.mode == InputMode::Readonly || self.cursor >= self.text.len() {
+            return;
+        }
         let rest = &self.text[self.cursor..];
         let chars: Vec<char> = rest.chars().collect();
         let mut idx = 0;
@@ -1839,7 +2331,9 @@ impl PromptInputState {
 
     /// Alt+B: Jump to previous word.
     pub fn move_word_backward(&mut self) {
-        if self.cursor == 0 { return; }
+        if self.cursor == 0 {
+            return;
+        }
         let before = &self.text[..self.cursor];
         let chars: Vec<char> = before.chars().collect();
         let mut idx = chars.len();
@@ -1863,7 +2357,9 @@ impl PromptInputState {
 
     /// Alt+F: Jump to next word.
     pub fn move_word_forward(&mut self) {
-        if self.cursor >= self.text.len() { return; }
+        if self.cursor >= self.text.len() {
+            return;
+        }
         let rest = &self.text[self.cursor..];
         let chars: Vec<char> = rest.chars().collect();
         let mut idx = 0;
@@ -1873,7 +2369,8 @@ impl PromptInputState {
                     idx += 1;
                 }
             } else if !chars[idx].is_whitespace() {
-                while idx < chars.len() && !is_word_char(chars[idx]) && !chars[idx].is_whitespace() {
+                while idx < chars.len() && !is_word_char(chars[idx]) && !chars[idx].is_whitespace()
+                {
                     idx += 1;
                 }
             }
@@ -1886,7 +2383,9 @@ impl PromptInputState {
 
     /// Alt+D: Delete word after cursor.
     pub fn delete_word_at_cursor(&mut self) {
-        if self.mode == InputMode::Readonly || self.cursor >= self.text.len() { return; }
+        if self.mode == InputMode::Readonly || self.cursor >= self.text.len() {
+            return;
+        }
         let rest = &self.text[self.cursor..];
         let chars: Vec<char> = rest.chars().collect();
         let mut idx = 0;
@@ -1925,11 +2424,13 @@ impl PromptInputState {
                         // Simple case: text only grew (cursor at end of inserted span)
                         let from = before.len().min(self.cursor);
                         let _ = from; // use cursor-based diff below
-                        // Find the diff between before/after texts at current cursor
-                        // Inserted = text[insert_start..cursor] but we don't track start.
-                        // Approximate: whole text minus before, substring at cursor.
-                        // Better: store cursor-at-entry and extract.
-                        self.text[before.len().min(self.text.len())..self.cursor.min(self.text.len())].to_string()
+                                      // Find the diff between before/after texts at current cursor
+                                      // Inserted = text[insert_start..cursor] but we don't track start.
+                                      // Approximate: whole text minus before, substring at cursor.
+                                      // Better: store cursor-at-entry and extract.
+                        self.text
+                            [before.len().min(self.text.len())..self.cursor.min(self.text.len())]
+                            .to_string()
                     } else {
                         String::new()
                     };
@@ -2002,7 +2503,8 @@ impl PromptInputState {
         // ---- Accumulate key into macro recording buffer ----
         if let Some(reg) = self.vim_macro_recording {
             // `q` in normal mode stops recording
-            if key == "q" && self.vim_mode == VimMode::Normal
+            if key == "q"
+                && self.vim_mode == VimMode::Normal
                 && self.vim_pending == VimPendingState::None
             {
                 self.stop_macro_recording();
@@ -2030,8 +2532,12 @@ impl PromptInputState {
                 match key {
                     "y" => {
                         // Yank current line to register
-                        let ls = self.text[..self.cursor].rfind('\n').map(|p| p + 1).unwrap_or(0);
-                        let le = self.text[self.cursor..].find('\n')
+                        let ls = self.text[..self.cursor]
+                            .rfind('\n')
+                            .map(|p| p + 1)
+                            .unwrap_or(0);
+                        let le = self.text[self.cursor..]
+                            .find('\n')
                             .map(|p| self.cursor + p + 1)
                             .unwrap_or(self.text.len());
                         let yanked = self.text[ls..le].to_string();
@@ -2040,8 +2546,12 @@ impl PromptInputState {
                     }
                     "d" => {
                         // Delete current line to register
-                        let ls = self.text[..self.cursor].rfind('\n').map(|p| p + 1).unwrap_or(0);
-                        let le = self.text[self.cursor..].find('\n')
+                        let ls = self.text[..self.cursor]
+                            .rfind('\n')
+                            .map(|p| p + 1)
+                            .unwrap_or(0);
+                        let le = self.text[self.cursor..]
+                            .find('\n')
                             .map(|p| self.cursor + p + 1)
                             .unwrap_or(self.text.len());
                         let deleted = self.text[ls..le].to_string();
@@ -2059,7 +2569,9 @@ impl PromptInputState {
                         // Paste from register after cursor
                         if let Some(buf) = self.paste_from_register(reg) {
                             let insert_pos = if self.cursor < self.text.len() {
-                                self.text[self.cursor..].char_indices().nth(1)
+                                self.text[self.cursor..]
+                                    .char_indices()
+                                    .nth(1)
                                     .map(|(b, _)| self.cursor + b)
                                     .unwrap_or(self.text.len())
                             } else {
@@ -2115,7 +2627,9 @@ impl PromptInputState {
                     // Replay each recorded key (avoid infinite loops by cloning)
                     for k in keys {
                         // Guard: don't replay if we somehow entered macro record for same reg
-                        if self.vim_macro_recording == Some(reg) { break; }
+                        if self.vim_macro_recording == Some(reg) {
+                            break;
+                        }
                         self.vim_command(&k.clone());
                     }
                 }
@@ -2125,7 +2639,8 @@ impl PromptInputState {
         }
 
         // ---- Dot-repeat `.` — replay last modifying action ----
-        if key == "." && self.vim_mode == VimMode::Normal
+        if key == "."
+            && self.vim_mode == VimMode::Normal
             && self.vim_pending == VimPendingState::None
         {
             if let Some(action) = self.vim_dot_action.clone() {
@@ -2141,15 +2656,21 @@ impl PromptInputState {
                         self.push_undo();
                         let mut deleted = 0usize;
                         while deleted < count && self.cursor < self.text.len() {
-                            let clen = self.text[self.cursor..].chars().next()
-                                .map(|c| c.len_utf8()).unwrap_or(1);
+                            let clen = self.text[self.cursor..]
+                                .chars()
+                                .next()
+                                .map(|c| c.len_utf8())
+                                .unwrap_or(1);
                             self.text.drain(self.cursor..self.cursor + clen);
                             deleted += 1;
                         }
                         self.normalize();
                         return;
                     }
-                    DotRepeatAction::Change { deleted: _del, inserted: ins } => {
+                    DotRepeatAction::Change {
+                        deleted: _del,
+                        inserted: ins,
+                    } => {
                         self.push_undo();
                         self.text.insert_str(self.cursor, &ins);
                         self.cursor += ins.len();
@@ -2159,9 +2680,13 @@ impl PromptInputState {
                     DotRepeatAction::ReplaceChar { ch } => {
                         if self.cursor < self.text.len() {
                             self.push_undo();
-                            let clen = self.text[self.cursor..].chars().next()
-                                .map(|c| c.len_utf8()).unwrap_or(1);
-                            self.text.replace_range(self.cursor..self.cursor + clen, &ch.to_string());
+                            let clen = self.text[self.cursor..]
+                                .chars()
+                                .next()
+                                .map(|c| c.len_utf8())
+                                .unwrap_or(1);
+                            self.text
+                                .replace_range(self.cursor..self.cursor + clen, &ch.to_string());
                             self.normalize();
                         }
                         return;
@@ -2176,7 +2701,10 @@ impl PromptInputState {
         let prev_text_len = self.text.len();
 
         // `u` — undo: restore previous text/cursor snapshot
-        if key == "u" && self.vim_mode == VimMode::Normal && self.vim_pending == VimPendingState::None {
+        if key == "u"
+            && self.vim_mode == VimMode::Normal
+            && self.vim_pending == VimPendingState::None
+        {
             if let Some((t, c)) = self.undo_stack.pop() {
                 self.text = t;
                 self.cursor = c;
@@ -2185,45 +2713,69 @@ impl PromptInputState {
             return;
         }
         // Enter visual mode with `v` — anchor the selection start
-        if key == "v" && self.vim_mode == VimMode::Normal && self.vim_pending == VimPendingState::None {
+        if key == "v"
+            && self.vim_mode == VimMode::Normal
+            && self.vim_pending == VimPendingState::None
+        {
             self.vim_mode = VimMode::Visual;
             self.visual_anchor = Some(self.cursor);
             return;
         }
         // Enter command-line mode with `:`
-        if key == ":" && self.vim_mode == VimMode::Normal && self.vim_pending == VimPendingState::None {
+        if key == ":"
+            && self.vim_mode == VimMode::Normal
+            && self.vim_pending == VimPendingState::None
+        {
             self.vim_mode = VimMode::Command;
             self.vim_command_buf.clear();
             return;
         }
         // Enter in-prompt search with `/`
-        if key == "/" && self.vim_mode == VimMode::Normal && self.vim_pending == VimPendingState::None {
+        if key == "/"
+            && self.vim_mode == VimMode::Normal
+            && self.vim_pending == VimPendingState::None
+        {
             self.vim_mode = VimMode::Search;
             self.vim_search_buf.clear();
             return;
         }
         // Enter visual-line mode with `V`
-        if key == "V" && self.vim_mode == VimMode::Normal && self.vim_pending == VimPendingState::None {
+        if key == "V"
+            && self.vim_mode == VimMode::Normal
+            && self.vim_pending == VimPendingState::None
+        {
             self.vim_mode = VimMode::VisualLine;
-            let ls = self.text[..self.cursor].rfind('\n').map(|p| p + 1).unwrap_or(0);
+            let ls = self.text[..self.cursor]
+                .rfind('\n')
+                .map(|p| p + 1)
+                .unwrap_or(0);
             self.visual_anchor = Some(ls);
             return;
         }
         // Enter visual-block mode with Ctrl+V
-        if key == "\x16" && self.vim_mode == VimMode::Normal && self.vim_pending == VimPendingState::None {
+        if key == "\x16"
+            && self.vim_mode == VimMode::Normal
+            && self.vim_pending == VimPendingState::None
+        {
             self.vim_mode = VimMode::VisualBlock;
             self.visual_anchor = Some(self.cursor);
             return;
         }
         // `n` — repeat last search forward
-        if key == "n" && self.vim_mode == VimMode::Normal && self.vim_pending == VimPendingState::None {
+        if key == "n"
+            && self.vim_mode == VimMode::Normal
+            && self.vim_pending == VimPendingState::None
+        {
             if let Some(pat) = self.vim_search_last.clone() {
                 self.vim_search_forward(&pat, 1);
             }
             return;
         }
         // `N` — repeat last search backward
-        if key == "N" && self.vim_mode == VimMode::Normal && self.vim_pending == VimPendingState::None {
+        if key == "N"
+            && self.vim_mode == VimMode::Normal
+            && self.vim_pending == VimPendingState::None
+        {
             if let Some(pat) = self.vim_search_last.clone() {
                 self.vim_search_backward(&pat);
             }
@@ -2256,7 +2808,8 @@ impl PromptInputState {
                         self.cursor = sel_start.min(self.text.len());
                         self.vim_mode = VimMode::Normal;
                         self.visual_anchor = None;
-                        self.vim_dot_action = Some(DotRepeatAction::DeleteChars { count: char_count });
+                        self.vim_dot_action =
+                            Some(DotRepeatAction::DeleteChars { count: char_count });
                         self.normalize();
                         return;
                     }
@@ -2282,7 +2835,11 @@ impl PromptInputState {
             if let Some(anchor) = self.visual_anchor {
                 let from = anchor.min(self.cursor);
                 let to_excl = anchor.max(self.cursor);
-                let to = self.text[to_excl..].char_indices().nth(1).map(|(b,_)| to_excl+b).unwrap_or(self.text.len());
+                let to = self.text[to_excl..]
+                    .char_indices()
+                    .nth(1)
+                    .map(|(b, _)| to_excl + b)
+                    .unwrap_or(self.text.len());
                 match key {
                     "y" => {
                         self.yank_buf = self.text[from..to].to_string();
@@ -2299,7 +2856,8 @@ impl PromptInputState {
                         self.cursor = from.min(self.text.len());
                         self.vim_mode = VimMode::Normal;
                         self.visual_anchor = None;
-                        self.vim_dot_action = Some(DotRepeatAction::DeleteChars { count: char_count });
+                        self.vim_dot_action =
+                            Some(DotRepeatAction::DeleteChars { count: char_count });
                         self.normalize();
                         return;
                     }
@@ -2323,7 +2881,11 @@ impl PromptInputState {
             if let Some(anchor) = self.visual_anchor {
                 let from = anchor.min(self.cursor);
                 let to_excl = anchor.max(self.cursor);
-                let to = self.text[to_excl..].char_indices().nth(1).map(|(b,_)| to_excl+b).unwrap_or(self.text.len());
+                let to = self.text[to_excl..]
+                    .char_indices()
+                    .nth(1)
+                    .map(|(b, _)| to_excl + b)
+                    .unwrap_or(self.text.len());
                 match key {
                     "y" => {
                         self.yank_buf = self.text[from..to].to_string();
@@ -2341,9 +2903,8 @@ impl PromptInputState {
                         self.cursor = from.min(self.text.len());
                         self.vim_mode = VimMode::Normal;
                         self.visual_anchor = None;
-                        self.vim_dot_action = Some(DotRepeatAction::DeleteChars {
-                            count: char_count,
-                        });
+                        self.vim_dot_action =
+                            Some(DotRepeatAction::DeleteChars { count: char_count });
                         self.normalize();
                         return;
                     }
@@ -2377,7 +2938,8 @@ impl PromptInputState {
             &mut self.last_find,
         );
         if modified {
-            self.undo_stack.push((snapshot_text.clone(), snapshot_cursor));
+            self.undo_stack
+                .push((snapshot_text.clone(), snapshot_cursor));
             if self.undo_stack.len() > 100 {
                 self.undo_stack.remove(0);
             }
@@ -2418,7 +2980,9 @@ impl PromptInputState {
         }
 
         // Update visual anchor tracking when in visual mode
-        if (self.vim_mode == VimMode::Visual || self.vim_mode == VimMode::VisualBlock) && self.visual_anchor.is_none() {
+        if (self.vim_mode == VimMode::Visual || self.vim_mode == VimMode::VisualBlock)
+            && self.visual_anchor.is_none()
+        {
             self.visual_anchor = Some(self.cursor);
         }
         self.normalize();
@@ -2448,7 +3012,8 @@ impl PromptInputState {
 
     /// Set mark `name` at the current cursor position.
     pub fn set_mark(&mut self, name: char) {
-        self.vim_marks.insert(name, (self.text.clone(), self.cursor));
+        self.vim_marks
+            .insert(name, (self.text.clone(), self.cursor));
     }
 
     /// Move cursor to the position recorded for mark `name`, if the text still matches.
@@ -2481,7 +3046,10 @@ impl PromptInputState {
 
     /// Return the recorded key sequence for `register`, or an empty vec.
     pub fn replay_macro(&self, register: char) -> Vec<String> {
-        self.vim_macro_content.get(&register).cloned().unwrap_or_default()
+        self.vim_macro_content
+            .get(&register)
+            .cloned()
+            .unwrap_or_default()
     }
 
     // ---- Vim command-line execution ----
@@ -2502,8 +3070,12 @@ impl PromptInputState {
                 // `:set vim` → enable, `:set novim` → disable (runtime toggle)
                 let arg = s["set ".len()..].trim();
                 match arg {
-                    "vim" => { self.vim_enabled = true; }
-                    "novim" => { self.vim_enabled = false; }
+                    "vim" => {
+                        self.vim_enabled = true;
+                    }
+                    "novim" => {
+                        self.vim_enabled = false;
+                    }
                     _ => {}
                 }
             }
@@ -2516,10 +3088,14 @@ impl PromptInputState {
     /// Move cursor to the next occurrence of `pattern` after `cursor + skip`.
     /// `skip = 0` finds from current position; `skip = 1` finds the *next* one.
     pub fn vim_search_forward(&mut self, pattern: &str, skip: usize) {
-        if pattern.is_empty() { return; }
+        if pattern.is_empty() {
+            return;
+        }
         let start = if skip > 0 {
             // Start after the current character to avoid re-matching same position
-            let next = self.text[self.cursor..].char_indices().nth(1)
+            let next = self.text[self.cursor..]
+                .char_indices()
+                .nth(1)
                 .map(|(b, _)| self.cursor + b)
                 .unwrap_or(0);
             next
@@ -2541,7 +3117,9 @@ impl PromptInputState {
 
     /// Move cursor to the previous occurrence of `pattern` before current cursor.
     pub fn vim_search_backward(&mut self, pattern: &str) {
-        if pattern.is_empty() { return; }
+        if pattern.is_empty() {
+            return;
+        }
         let text_lc = self.text.to_lowercase();
         let pat_lc = pattern.to_lowercase();
         // Find all occurrences, pick the last one before cursor
@@ -2582,40 +3160,65 @@ impl PromptInputState {
     pub fn has_active_file_ref(&self) -> bool {
         let text = &self.text[..self.cursor];
         text.rfind('@').map_or(false, |at_idx| {
-            at_idx == 0 || text[..at_idx].chars().last().map_or(false, |c| c.is_whitespace())
+            at_idx == 0
+                || text[..at_idx]
+                    .chars()
+                    .last()
+                    .map_or(false, |c| c.is_whitespace())
         })
     }
 
     /// Update typeahead suggestions for slash commands and file references in the current text.
-    pub fn update_suggestions(&mut self, slash_commands: &[(&str, &str)], file_autocomplete_limit: usize, file_autocomplete_show_hidden: bool) {
+    pub fn update_suggestions(
+        &mut self,
+        slash_commands: &[(&str, &str)],
+        file_autocomplete_limit: usize,
+        file_autocomplete_show_hidden: bool,
+    ) {
         // Only look at text up to the cursor — text after the cursor belongs to a
         // different editing position and would confuse rfind('@') / rfind('/').
         let text_before_cursor = &self.text[..self.cursor];
-        self.suggestions = compute_typeahead(text_before_cursor, slash_commands, file_autocomplete_limit, file_autocomplete_show_hidden);
+        self.suggestions = compute_typeahead(
+            text_before_cursor,
+            slash_commands,
+            file_autocomplete_limit,
+            file_autocomplete_show_hidden,
+        );
 
         if self.suggestions.is_empty() {
             self.suggestion_index = None;
         } else {
-            let idx = self.suggestion_index.unwrap_or(0).min(self.suggestions.len() - 1);
+            let idx = self
+                .suggestion_index
+                .unwrap_or(0)
+                .min(self.suggestions.len() - 1);
             self.suggestion_index = Some(idx);
         }
     }
 
     /// Select the next suggestion.
     pub fn suggestion_next(&mut self) {
-        if self.suggestions.is_empty() { return; }
+        if self.suggestions.is_empty() {
+            return;
+        }
         self.suggestion_index = Some(
-            self.suggestion_index.map_or(0, |i| (i + 1) % self.suggestions.len())
+            self.suggestion_index
+                .map_or(0, |i| (i + 1) % self.suggestions.len()),
         );
     }
 
     /// Select the previous suggestion.
     pub fn suggestion_prev(&mut self) {
-        if self.suggestions.is_empty() { return; }
-        self.suggestion_index = Some(
-            self.suggestion_index
-                .map_or(0, |i| if i == 0 { self.suggestions.len() - 1 } else { i - 1 })
-        );
+        if self.suggestions.is_empty() {
+            return;
+        }
+        self.suggestion_index = Some(self.suggestion_index.map_or(0, |i| {
+            if i == 0 {
+                self.suggestions.len() - 1
+            } else {
+                i - 1
+            }
+        }));
     }
 
     /// Accept the current suggestion.
@@ -2698,7 +3301,11 @@ impl PromptInputState {
                     b -= 1;
                 }
                 let intra_chars = line[..b].chars().count();
-                let chunk_idx = if intra_chars == 0 { 0 } else { intra_chars / width };
+                let chunk_idx = if intra_chars == 0 {
+                    0
+                } else {
+                    intra_chars / width
+                };
                 let chunk_col = intra_chars % width;
                 return (row + chunk_idx, chunk_col);
             }
@@ -2761,10 +3368,7 @@ impl PromptInputState {
                 let intra_chunk = target_row - row;
                 let chunk_char_start = intra_chunk * width;
                 let line_chars: Vec<(usize, char)> = line.char_indices().collect();
-                let chunk_chars_len = line_chars
-                    .len()
-                    .saturating_sub(chunk_char_start)
-                    .min(width);
+                let chunk_chars_len = line_chars.len().saturating_sub(chunk_char_start).min(width);
                 let col = target_col.min(chunk_chars_len);
                 let target_char_idx = chunk_char_start + col;
                 let intra_byte = line_chars
@@ -2796,11 +3400,15 @@ impl PromptInputState {
         self.token_estimate = (self.text.len() + 3) / 4;
     }
 
-    pub fn is_empty(&self) -> bool { self.text.trim().is_empty() }
+    pub fn is_empty(&self) -> bool {
+        self.text.trim().is_empty()
+    }
 }
 
 impl Default for PromptInputState {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -2836,7 +3444,11 @@ pub fn input_height(state: &PromptInputState, text_width: u16) -> u16 {
     const MAX_TEXT_ROWS: usize = 10;
     let text_rows = visual_lines.min(MAX_TEXT_ROWS) as u16;
     let base = (text_rows + 3).max(4);
-    base + if state.pending_images.is_empty() { 0 } else { 1 }
+    base + if state.pending_images.is_empty() {
+        0
+    } else {
+        1
+    }
 }
 
 /// Wrap a logical line into visual chunks of `width` chars (char-based, not
@@ -2880,7 +3492,12 @@ pub fn render_prompt_input(
     // If images are pending, render a pill row above everything else and shrink area.
     let (area, image_row_y) = if !state.pending_images.is_empty() && area.height > 1 {
         let pill_y = area.y;
-        let rest = Rect { x: area.x, y: area.y + 1, width: area.width, height: area.height - 1 };
+        let rest = Rect {
+            x: area.x,
+            y: area.y + 1,
+            width: area.width,
+            height: area.height - 1,
+        };
         (rest, Some(pill_y))
     } else {
         (area, None)
@@ -2890,22 +3507,32 @@ pub fn render_prompt_input(
         let mut pills: Vec<Span<'static>> = Vec::new();
         for img in &state.pending_images {
             let label = if let Some((w, h)) = img.dimensions {
-                format!(" \u{f03e} {} {}x{} ", img.label, w, h)  // nerd-font image icon, fallback to plain text
+                format!(" \u{f03e} {} {}x{} ", img.label, w, h) // nerd-font image icon, fallback to plain text
             } else {
                 format!(" \u{f03e} {} ", img.label)
             };
-            pills.push(Span::styled(label, Style::default().fg(Color::Black).bg(Color::Cyan)));
+            pills.push(Span::styled(
+                label,
+                Style::default().fg(Color::Black).bg(Color::Cyan),
+            ));
             pills.push(Span::raw(" "));
         }
         if !pills.is_empty() {
-            Paragraph::new(Line::from(pills))
-                .render(Rect { x: area.x, y: pill_y, width: area.width, height: 1 }, buf);
+            Paragraph::new(Line::from(pills)).render(
+                Rect {
+                    x: area.x,
+                    y: pill_y,
+                    width: area.width,
+                    height: 1,
+                },
+                buf,
+            );
         }
     }
 
     let accent = match mode {
-        InputMode::Readonly => CLAUDE_ORANGE,   // locked while streaming — always pink
-        _ => accent_override,                   // use mode-aware accent color
+        InputMode::Readonly => CLAUDE_ORANGE, // locked while streaming — always pink
+        _ => accent_override,                 // use mode-aware accent color
     };
     let prompt_prefix = format!("{PROMPT_POINTER} ");
     let prefix_width = prompt_prefix.chars().count() as u16;
@@ -2948,7 +3575,15 @@ pub fn render_prompt_input(
             "\u{2500}".repeat(area.width as usize),
             Style::default().fg(accent),
         )]))
-        .render(Rect { x: area.x, y: area.y, width: area.width, height: 1 }, buf);
+        .render(
+            Rect {
+                x: area.x,
+                y: area.y,
+                width: area.width,
+                height: 1,
+            },
+            buf,
+        );
     }
 
     // Text rows start 1 row below the top separator.
@@ -3006,7 +3641,10 @@ pub fn render_prompt_input(
         // Fallback: cursor at end of text.
         found.or_else(|| {
             let li = logical_lines.len().saturating_sub(1);
-            let col = logical_lines.get(li).map(|s| s.chars().count()).unwrap_or(0);
+            let col = logical_lines
+                .get(li)
+                .map(|s| s.chars().count())
+                .unwrap_or(0);
             Some((li, col))
         })
     } else if focused && state.text.is_empty() {
@@ -3061,7 +3699,10 @@ pub fn render_prompt_input(
 
         let spans: Vec<Span<'static>> = if is_first_row_of_first_logical {
             vec![
-                Span::styled(prompt_prefix.clone(), Style::default().fg(accent).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    prompt_prefix.clone(),
+                    Style::default().fg(accent).add_modifier(Modifier::BOLD),
+                ),
                 Span::styled(chunk.clone(), text_style),
             ]
         } else {
@@ -3072,7 +3713,12 @@ pub fn render_prompt_input(
         };
 
         Paragraph::new(Line::from(spans)).render(
-            Rect { x: area.x, y: row_y, width: area.width, height: 1 },
+            Rect {
+                x: area.x,
+                y: row_y,
+                width: area.width,
+                height: 1,
+            },
             buf,
         );
     }
@@ -3105,11 +3751,17 @@ pub fn render_prompt_input(
     let cmd_line: Option<Line<'static>> = match state.vim_mode {
         VimMode::Command => {
             let buf_text = format!(":{}\u{2588}", state.vim_command_buf);
-            Some(Line::from(vec![Span::styled(buf_text, Style::default().fg(Color::Cyan))]))
+            Some(Line::from(vec![Span::styled(
+                buf_text,
+                Style::default().fg(Color::Cyan),
+            )]))
         }
         VimMode::Search => {
             let buf_text = format!("/{}\u{2588}", state.vim_search_buf);
-            Some(Line::from(vec![Span::styled(buf_text, Style::default().fg(Color::Yellow))]))
+            Some(Line::from(vec![Span::styled(
+                buf_text,
+                Style::default().fg(Color::Yellow),
+            )]))
         }
         _ => None,
     };
@@ -3125,7 +3777,12 @@ pub fn render_prompt_input(
     if let (Some(row), Some(cl)) = (cmdline_row, cmd_line) {
         if row < area.y + area.height {
             Paragraph::new(cl).render(
-                Rect { x: area.x, y: row, width: area.width, height: 1 },
+                Rect {
+                    x: area.x,
+                    y: row,
+                    width: area.width,
+                    height: 1,
+                },
                 buf,
             );
         }
@@ -3137,7 +3794,12 @@ pub fn render_prompt_input(
             Style::default().fg(accent),
         )]))
         .render(
-            Rect { x: area.x, y: underline_row, width: area.width, height: 1 },
+            Rect {
+                x: area.x,
+                y: underline_row,
+                width: area.width,
+                height: 1,
+            },
             buf,
         );
     }
@@ -3451,8 +4113,14 @@ mod tests {
         // >150 chars → triggers placeholder
         let big = "x".repeat(200);
         let (result, stored) = handle_paste(&big, &mut counter);
-        assert!(result.starts_with("[Pasted ~"), "expected placeholder, got: {result}");
-        assert!(result.contains("#1"), "expected counter in placeholder, got: {result}");
+        assert!(
+            result.starts_with("[Pasted ~"),
+            "expected placeholder, got: {result}"
+        );
+        assert!(
+            result.contains("#1"),
+            "expected counter in placeholder, got: {result}"
+        );
         assert!(stored.is_some());
         assert_eq!(counter, 1);
     }
@@ -3463,8 +4131,14 @@ mod tests {
         // ≥3 lines → triggers placeholder regardless of length
         let big = "line\n".repeat(300);
         let (result, stored) = handle_paste(&big, &mut counter);
-        assert!(result.starts_with("[Pasted ~"), "expected placeholder, got: {result}");
-        assert!(result.contains("lines"), "expected line count in placeholder, got: {result}");
+        assert!(
+            result.starts_with("[Pasted ~"),
+            "expected placeholder, got: {result}"
+        );
+        assert!(
+            result.contains("lines"),
+            "expected line count in placeholder, got: {result}"
+        );
         assert!(stored.is_some());
     }
 
@@ -3474,7 +4148,10 @@ mod tests {
         // Exactly 3 lines (the threshold) should use a placeholder.
         let three_lines = "a\nb\nc";
         let (result, stored) = handle_paste(three_lines, &mut counter);
-        assert!(result.starts_with("[Pasted ~"), "3-line paste should be placeholder, got: {result}");
+        assert!(
+            result.starts_with("[Pasted ~"),
+            "3-line paste should be placeholder, got: {result}"
+        );
         assert!(stored.is_some());
     }
 
@@ -3505,7 +4182,11 @@ mod tests {
 
     #[test]
     fn typeahead_slash_prefix_matches() {
-        let cmds = [("help", "Show help"), ("history", "Show history"), ("compact", "Compact")];
+        let cmds = [
+            ("help", "Show help"),
+            ("history", "Show history"),
+            ("compact", "Compact"),
+        ];
         let suggestions = compute_slash_suggestions("/h", &cmds);
         assert_eq!(suggestions.len(), 2);
         assert_eq!(suggestions[0].text, "/help");
@@ -3534,7 +4215,11 @@ mod tests {
     #[test]
     fn suggestion_next_cycles() {
         let mut s = PromptInputState::new();
-        let cmds = [("help", "Help"), ("history", "History"), ("compact", "Compact")];
+        let cmds = [
+            ("help", "Help"),
+            ("history", "History"),
+            ("compact", "Compact"),
+        ];
         s.text = "/h".to_string();
         s.cursor = s.text.len();
         s.update_suggestions(&cmds, 15, false);
@@ -3578,7 +4263,7 @@ mod tests {
     fn motion_w_basic() {
         assert_eq!(motion_w("hello world", 0), 6);
         assert_eq!(motion_w("hello world", 6), 11); // at start of 'world', moves to end
-        assert_eq!(motion_w("  foo", 0), 2);         // skip leading spaces
+        assert_eq!(motion_w("  foo", 0), 2); // skip leading spaces
     }
 
     #[test]
@@ -3589,7 +4274,7 @@ mod tests {
 
     #[test]
     fn motion_e_basic() {
-        assert_eq!(motion_e("hello world", 0), 4);  // cursor on 'h', end at 'o'
+        assert_eq!(motion_e("hello world", 0), 4); // cursor on 'h', end at 'o'
         assert_eq!(motion_e("hello world", 4), 10); // at 'o' (end), jump to 'd'
     }
 
@@ -3627,7 +4312,10 @@ mod tests {
     #[test]
     fn motion_find_char_f() {
         // f: cursor lands on 'o', count=1
-        assert_eq!(motion_find_char("hello", 0, 'o', VimFindKind::F, 1), Some(4));
+        assert_eq!(
+            motion_find_char("hello", 0, 'o', VimFindKind::F, 1),
+            Some(4)
+        );
         // f: not found
         assert_eq!(motion_find_char("hello", 0, 'z', VimFindKind::F, 1), None);
     }
@@ -3635,13 +4323,19 @@ mod tests {
     #[test]
     fn motion_find_char_t() {
         // t: cursor stops before 'o'
-        assert_eq!(motion_find_char("hello", 0, 'o', VimFindKind::T, 1), Some(3));
+        assert_eq!(
+            motion_find_char("hello", 0, 'o', VimFindKind::T, 1),
+            Some(3)
+        );
     }
 
     #[test]
     fn motion_find_char_bigF() {
         // F: search backward
-        assert_eq!(motion_find_char("hello", 4, 'h', VimFindKind::BigF, 1), Some(0));
+        assert_eq!(
+            motion_find_char("hello", 4, 'h', VimFindKind::BigF, 1),
+            Some(0)
+        );
     }
 
     // ---- apply_vim_key new commands ----------------------------------------
@@ -3654,7 +4348,15 @@ mod tests {
         let mut yank = String::new();
         let mut pending = VimPendingState::None;
         let mut last_find = None;
-        apply_vim_key(&mut mode, &mut text, &mut cursor, "e", &mut yank, &mut pending, &mut last_find);
+        apply_vim_key(
+            &mut mode,
+            &mut text,
+            &mut cursor,
+            "e",
+            &mut yank,
+            &mut pending,
+            &mut last_find,
+        );
         assert_eq!(cursor, 4); // end of 'hello'
     }
 
@@ -3666,7 +4368,15 @@ mod tests {
         let mut yank = String::new();
         let mut pending = VimPendingState::None;
         let mut last_find = None;
-        apply_vim_key(&mut mode, &mut text, &mut cursor, "W", &mut yank, &mut pending, &mut last_find);
+        apply_vim_key(
+            &mut mode,
+            &mut text,
+            &mut cursor,
+            "W",
+            &mut yank,
+            &mut pending,
+            &mut last_find,
+        );
         assert_eq!(cursor, 8); // 'baz'
     }
 
@@ -3678,7 +4388,15 @@ mod tests {
         let mut yank = String::new();
         let mut pending = VimPendingState::None;
         let mut last_find = None;
-        apply_vim_key(&mut mode, &mut text, &mut cursor, "G", &mut yank, &mut pending, &mut last_find);
+        apply_vim_key(
+            &mut mode,
+            &mut text,
+            &mut cursor,
+            "G",
+            &mut yank,
+            &mut pending,
+            &mut last_find,
+        );
         assert_eq!(cursor, 13); // start of 'third'
     }
 
@@ -3691,9 +4409,25 @@ mod tests {
         let mut pending = VimPendingState::None;
         let mut last_find = None;
         // 'g' sets pending G
-        apply_vim_key(&mut mode, &mut text, &mut cursor, "g", &mut yank, &mut pending, &mut last_find);
+        apply_vim_key(
+            &mut mode,
+            &mut text,
+            &mut cursor,
+            "g",
+            &mut yank,
+            &mut pending,
+            &mut last_find,
+        );
         assert!(matches!(pending, VimPendingState::G { .. }));
-        apply_vim_key(&mut mode, &mut text, &mut cursor, "g", &mut yank, &mut pending, &mut last_find);
+        apply_vim_key(
+            &mut mode,
+            &mut text,
+            &mut cursor,
+            "g",
+            &mut yank,
+            &mut pending,
+            &mut last_find,
+        );
         assert_eq!(cursor, 0);
     }
 
@@ -3706,9 +4440,25 @@ mod tests {
         let mut pending = VimPendingState::None;
         let mut last_find = None;
         // 3w — advance 3 words
-        apply_vim_key(&mut mode, &mut text, &mut cursor, "3", &mut yank, &mut pending, &mut last_find);
+        apply_vim_key(
+            &mut mode,
+            &mut text,
+            &mut cursor,
+            "3",
+            &mut yank,
+            &mut pending,
+            &mut last_find,
+        );
         assert!(matches!(pending, VimPendingState::Count { .. }));
-        apply_vim_key(&mut mode, &mut text, &mut cursor, "w", &mut yank, &mut pending, &mut last_find);
+        apply_vim_key(
+            &mut mode,
+            &mut text,
+            &mut cursor,
+            "w",
+            &mut yank,
+            &mut pending,
+            &mut last_find,
+        );
         assert_eq!(cursor, 6); // 3 words forward: a→b→c→d start = pos 6
     }
 
@@ -3720,9 +4470,31 @@ mod tests {
         let mut yank = String::new();
         let mut pending = VimPendingState::None;
         let mut last_find = None;
-        apply_vim_key(&mut mode, &mut text, &mut cursor, "d", &mut yank, &mut pending, &mut last_find);
-        assert!(matches!(pending, VimPendingState::Operator { op: VimOperator::Delete, .. }));
-        apply_vim_key(&mut mode, &mut text, &mut cursor, "w", &mut yank, &mut pending, &mut last_find);
+        apply_vim_key(
+            &mut mode,
+            &mut text,
+            &mut cursor,
+            "d",
+            &mut yank,
+            &mut pending,
+            &mut last_find,
+        );
+        assert!(matches!(
+            pending,
+            VimPendingState::Operator {
+                op: VimOperator::Delete,
+                ..
+            }
+        ));
+        apply_vim_key(
+            &mut mode,
+            &mut text,
+            &mut cursor,
+            "w",
+            &mut yank,
+            &mut pending,
+            &mut last_find,
+        );
         assert_eq!(text, "world");
         assert_eq!(yank, "hello ");
     }
@@ -3735,8 +4507,24 @@ mod tests {
         let mut yank = String::new();
         let mut pending = VimPendingState::None;
         let mut last_find = None;
-        apply_vim_key(&mut mode, &mut text, &mut cursor, "c", &mut yank, &mut pending, &mut last_find);
-        apply_vim_key(&mut mode, &mut text, &mut cursor, "w", &mut yank, &mut pending, &mut last_find);
+        apply_vim_key(
+            &mut mode,
+            &mut text,
+            &mut cursor,
+            "c",
+            &mut yank,
+            &mut pending,
+            &mut last_find,
+        );
+        apply_vim_key(
+            &mut mode,
+            &mut text,
+            &mut cursor,
+            "w",
+            &mut yank,
+            &mut pending,
+            &mut last_find,
+        );
         assert_eq!(mode, VimMode::Insert);
         assert_eq!(text, "world");
     }
@@ -3749,8 +4537,24 @@ mod tests {
         let mut yank = String::new();
         let mut pending = VimPendingState::None;
         let mut last_find = None;
-        apply_vim_key(&mut mode, &mut text, &mut cursor, "d", &mut yank, &mut pending, &mut last_find);
-        apply_vim_key(&mut mode, &mut text, &mut cursor, "d", &mut yank, &mut pending, &mut last_find);
+        apply_vim_key(
+            &mut mode,
+            &mut text,
+            &mut cursor,
+            "d",
+            &mut yank,
+            &mut pending,
+            &mut last_find,
+        );
+        apply_vim_key(
+            &mut mode,
+            &mut text,
+            &mut cursor,
+            "d",
+            &mut yank,
+            &mut pending,
+            &mut last_find,
+        );
         assert_eq!(text, "second");
         assert_eq!(yank, "first\n");
     }
@@ -3763,9 +4567,25 @@ mod tests {
         let mut yank = String::new();
         let mut pending = VimPendingState::None;
         let mut last_find = None;
-        apply_vim_key(&mut mode, &mut text, &mut cursor, "r", &mut yank, &mut pending, &mut last_find);
+        apply_vim_key(
+            &mut mode,
+            &mut text,
+            &mut cursor,
+            "r",
+            &mut yank,
+            &mut pending,
+            &mut last_find,
+        );
         assert!(matches!(pending, VimPendingState::Replace { .. }));
-        apply_vim_key(&mut mode, &mut text, &mut cursor, "H", &mut yank, &mut pending, &mut last_find);
+        apply_vim_key(
+            &mut mode,
+            &mut text,
+            &mut cursor,
+            "H",
+            &mut yank,
+            &mut pending,
+            &mut last_find,
+        );
         assert_eq!(text, "Hello");
         assert_eq!(mode, VimMode::Normal); // stays in Normal after replace
     }
@@ -3778,8 +4598,24 @@ mod tests {
         let mut yank = String::new();
         let mut pending = VimPendingState::None;
         let mut last_find = None;
-        apply_vim_key(&mut mode, &mut text, &mut cursor, "f", &mut yank, &mut pending, &mut last_find);
-        apply_vim_key(&mut mode, &mut text, &mut cursor, "o", &mut yank, &mut pending, &mut last_find);
+        apply_vim_key(
+            &mut mode,
+            &mut text,
+            &mut cursor,
+            "f",
+            &mut yank,
+            &mut pending,
+            &mut last_find,
+        );
+        apply_vim_key(
+            &mut mode,
+            &mut text,
+            &mut cursor,
+            "o",
+            &mut yank,
+            &mut pending,
+            &mut last_find,
+        );
         assert_eq!(cursor, 4); // first 'o' in 'hello'
         assert_eq!(last_find, Some((VimFindKind::F, 'o')));
     }
@@ -3792,10 +4628,34 @@ mod tests {
         let mut yank = String::new();
         let mut pending = VimPendingState::None;
         let mut last_find = None;
-        apply_vim_key(&mut mode, &mut text, &mut cursor, "f", &mut yank, &mut pending, &mut last_find);
-        apply_vim_key(&mut mode, &mut text, &mut cursor, ".", &mut yank, &mut pending, &mut last_find);
+        apply_vim_key(
+            &mut mode,
+            &mut text,
+            &mut cursor,
+            "f",
+            &mut yank,
+            &mut pending,
+            &mut last_find,
+        );
+        apply_vim_key(
+            &mut mode,
+            &mut text,
+            &mut cursor,
+            ".",
+            &mut yank,
+            &mut pending,
+            &mut last_find,
+        );
         assert_eq!(cursor, 1);
-        apply_vim_key(&mut mode, &mut text, &mut cursor, ";", &mut yank, &mut pending, &mut last_find);
+        apply_vim_key(
+            &mut mode,
+            &mut text,
+            &mut cursor,
+            ";",
+            &mut yank,
+            &mut pending,
+            &mut last_find,
+        );
         assert_eq!(cursor, 3); // repeated find → next '.'
     }
 
@@ -3807,7 +4667,15 @@ mod tests {
         let mut yank = String::new();
         let mut pending = VimPendingState::None;
         let mut last_find = None;
-        apply_vim_key(&mut mode, &mut text, &mut cursor, "X", &mut yank, &mut pending, &mut last_find);
+        apply_vim_key(
+            &mut mode,
+            &mut text,
+            &mut cursor,
+            "X",
+            &mut yank,
+            &mut pending,
+            &mut last_find,
+        );
         assert_eq!(text, "helo");
         assert_eq!(cursor, 3);
     }
@@ -3820,7 +4688,15 @@ mod tests {
         let mut yank = String::new();
         let mut pending = VimPendingState::None;
         let mut last_find = None;
-        apply_vim_key(&mut mode, &mut text, &mut cursor, "~", &mut yank, &mut pending, &mut last_find);
+        apply_vim_key(
+            &mut mode,
+            &mut text,
+            &mut cursor,
+            "~",
+            &mut yank,
+            &mut pending,
+            &mut last_find,
+        );
         assert_eq!(text, "Hello");
     }
 
@@ -3832,7 +4708,15 @@ mod tests {
         let mut yank = String::new();
         let mut pending = VimPendingState::None;
         let mut last_find = None;
-        apply_vim_key(&mut mode, &mut text, &mut cursor, "o", &mut yank, &mut pending, &mut last_find);
+        apply_vim_key(
+            &mut mode,
+            &mut text,
+            &mut cursor,
+            "o",
+            &mut yank,
+            &mut pending,
+            &mut last_find,
+        );
         assert_eq!(mode, VimMode::Insert);
         assert!(text.contains('\n'));
         assert_eq!(cursor, 6); // after first newline
@@ -3846,7 +4730,15 @@ mod tests {
         let mut yank = String::new();
         let mut pending = VimPendingState::None;
         let mut last_find = None;
-        apply_vim_key(&mut mode, &mut text, &mut cursor, "D", &mut yank, &mut pending, &mut last_find);
+        apply_vim_key(
+            &mut mode,
+            &mut text,
+            &mut cursor,
+            "D",
+            &mut yank,
+            &mut pending,
+            &mut last_find,
+        );
         assert_eq!(text, "hello ");
         assert_eq!(yank, "world");
     }
@@ -3861,7 +4753,7 @@ mod tests {
         s.text = "hello".to_string();
         s.cursor = 5;
         s.vim_command("x"); // deletes 'o' (but cursor at 5 = past end)
-        // let's set cursor to 4 and delete
+                            // let's set cursor to 4 and delete
         s.cursor = 4;
         s.vim_command("x");
         assert_eq!(s.text, "hell");
@@ -3897,7 +4789,10 @@ mod tests {
         s.vim_command("\"");
         s.vim_command("a");
         s.vim_command("y");
-        assert_eq!(s.vim_registers.get(&'a').map(|s| s.as_str()), Some("hello world"));
+        assert_eq!(
+            s.vim_registers.get(&'a').map(|s| s.as_str()),
+            Some("hello world")
+        );
         // `"ap` — paste from register 'a' after cursor
         s.cursor = 0;
         s.vim_command("\"");
@@ -3924,7 +4819,10 @@ mod tests {
         s.vim_command("\"");
         s.vim_command("a");
         s.vim_command("d");
-        assert_eq!(s.vim_registers.get(&'a').map(|s| s.as_str()), Some("hello\n"));
+        assert_eq!(
+            s.vim_registers.get(&'a').map(|s| s.as_str()),
+            Some("hello\n")
+        );
         assert_eq!(s.text, "world");
     }
 
@@ -3991,8 +4889,14 @@ mod tests {
         s.start_macro_recording('q');
         assert_eq!(s.vim_macro_recording, Some('q'));
         // Simulate accumulating keys
-        s.vim_macro_content.get_mut(&'q').unwrap().push("w".to_string());
-        s.vim_macro_content.get_mut(&'q').unwrap().push("e".to_string());
+        s.vim_macro_content
+            .get_mut(&'q')
+            .unwrap()
+            .push("w".to_string());
+        s.vim_macro_content
+            .get_mut(&'q')
+            .unwrap()
+            .push("e".to_string());
         // Stop recording
         let reg = s.stop_macro_recording();
         assert_eq!(reg, Some('q'));
@@ -4038,7 +4942,8 @@ mod tests {
         s.text = "abcdef".to_string();
         s.cursor = 0;
         // Manually record a macro: move 2 chars right
-        s.vim_macro_content.insert('q', vec!["l".to_string(), "l".to_string()]);
+        s.vim_macro_content
+            .insert('q', vec!["l".to_string(), "l".to_string()]);
         // `@q` — replay macro 'q'
         s.vim_command("@");
         assert!(matches!(s.vim_pending, VimPendingState::MacroReplay));
@@ -4318,23 +5223,45 @@ mod tests {
     #[test]
     fn file_autocomplete_at_requires_word_boundary() {
         // @ at word boundary: should suggest files (or be empty if cwd has no files)
-        let suggestions_at_boundary = compute_file_suggestions("@", TEST_FILE_AUTOCOMPLETE_LIMIT, TEST_FILE_AUTOCOMPLETE_SHOW_HIDDEN);
-        let suggestions_at_boundary_with_space = compute_file_suggestions("hello @", TEST_FILE_AUTOCOMPLETE_LIMIT, TEST_FILE_AUTOCOMPLETE_SHOW_HIDDEN);
+        let suggestions_at_boundary = compute_file_suggestions(
+            "@",
+            TEST_FILE_AUTOCOMPLETE_LIMIT,
+            TEST_FILE_AUTOCOMPLETE_SHOW_HIDDEN,
+        );
+        let suggestions_at_boundary_with_space = compute_file_suggestions(
+            "hello @",
+            TEST_FILE_AUTOCOMPLETE_LIMIT,
+            TEST_FILE_AUTOCOMPLETE_SHOW_HIDDEN,
+        );
 
         // @ not at word boundary: should never suggest files
-        let suggestions_no_boundary = compute_file_suggestions("test@", TEST_FILE_AUTOCOMPLETE_LIMIT, TEST_FILE_AUTOCOMPLETE_SHOW_HIDDEN);
-        assert!(suggestions_no_boundary.is_empty(), "@ without word boundary should never suggest files");
+        let suggestions_no_boundary = compute_file_suggestions(
+            "test@",
+            TEST_FILE_AUTOCOMPLETE_LIMIT,
+            TEST_FILE_AUTOCOMPLETE_SHOW_HIDDEN,
+        );
+        assert!(
+            suggestions_no_boundary.is_empty(),
+            "@ without word boundary should never suggest files"
+        );
 
         // At least one of the boundary cases should work if cwd has files
         // but more importantly, the non-boundary case should always be empty
-        for suggestion in suggestions_at_boundary.iter().chain(suggestions_at_boundary_with_space.iter()) {
+        for suggestion in suggestions_at_boundary
+            .iter()
+            .chain(suggestions_at_boundary_with_space.iter())
+        {
             assert_eq!(suggestion.source, TypeaheadSource::FileRef);
         }
     }
 
     #[test]
     fn file_autocomplete_returns_fileref_source() {
-        let suggestions = compute_file_suggestions("@", TEST_FILE_AUTOCOMPLETE_LIMIT, TEST_FILE_AUTOCOMPLETE_SHOW_HIDDEN);
+        let suggestions = compute_file_suggestions(
+            "@",
+            TEST_FILE_AUTOCOMPLETE_LIMIT,
+            TEST_FILE_AUTOCOMPLETE_SHOW_HIDDEN,
+        );
 
         for suggestion in suggestions {
             assert_eq!(suggestion.source, TypeaheadSource::FileRef);
@@ -4343,7 +5270,11 @@ mod tests {
 
     #[test]
     fn file_autocomplete_format_filenames() {
-        let suggestions = compute_file_suggestions("@", TEST_FILE_AUTOCOMPLETE_LIMIT, TEST_FILE_AUTOCOMPLETE_SHOW_HIDDEN);
+        let suggestions = compute_file_suggestions(
+            "@",
+            TEST_FILE_AUTOCOMPLETE_LIMIT,
+            TEST_FILE_AUTOCOMPLETE_SHOW_HIDDEN,
+        );
 
         // All suggestions should start with @
         for suggestion in suggestions {
@@ -4354,7 +5285,11 @@ mod tests {
     #[test]
     fn file_autocomplete_with_whitespace_prefix() {
         // @ after whitespace: should suggest files
-        let suggestions = compute_file_suggestions("hello @", TEST_FILE_AUTOCOMPLETE_LIMIT, TEST_FILE_AUTOCOMPLETE_SHOW_HIDDEN);
+        let suggestions = compute_file_suggestions(
+            "hello @",
+            TEST_FILE_AUTOCOMPLETE_LIMIT,
+            TEST_FILE_AUTOCOMPLETE_SHOW_HIDDEN,
+        );
 
         // Check they all start with @ and are FileRef source
         for suggestion in suggestions {
@@ -4368,7 +5303,11 @@ mod tests {
         // This test verifies that symlinks/junction links are properly detected.
         // On systems with symlinks/junctions, suggestions will include descriptions
         // like "file link" or "directory link".
-        let suggestions = compute_file_suggestions("@", TEST_FILE_AUTOCOMPLETE_LIMIT, TEST_FILE_AUTOCOMPLETE_SHOW_HIDDEN);
+        let suggestions = compute_file_suggestions(
+            "@",
+            TEST_FILE_AUTOCOMPLETE_LIMIT,
+            TEST_FILE_AUTOCOMPLETE_SHOW_HIDDEN,
+        );
 
         // All suggestions should have a description (file, directory, file link, or directory link)
         for suggestion in suggestions {

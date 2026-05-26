@@ -73,6 +73,7 @@ impl ProviderId {
     pub const NOVITA: &'static str = "novita";
     pub const MINIMAX: &'static str = "minimax";
     pub const CODEX: &'static str = "codex";
+    pub const FREELLMAPI: &'static str = "freellmapi";
     pub const OPENCODE_GO: &'static str = "opencode-go";
     pub const OPENCODE_ZEN: &'static str = "opencode-zen";
     pub const SYNTHETIC: &'static str = "synthetic";

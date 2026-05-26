@@ -13,6 +13,7 @@ use super::openai_compat::{OpenAiCompatProvider, ProviderQuirks};
 
 pub fn provider_for_id(provider_id: &str) -> Option<OpenAiCompatProvider> {
     match provider_id {
+        "freellmapi" => Some(freellmapi()),
         "ollama" => Some(ollama()),
         "lmstudio" | "lm-studio" => Some(lm_studio()),
         "llamacpp" | "llama-cpp" | "llama-server" => Some(llama_cpp()),
@@ -57,6 +58,23 @@ pub fn provider_for_id(provider_id: &str) -> Option<OpenAiCompatProvider> {
 // ---------------------------------------------------------------------------
 // Local / self-hosted providers (no API key required)
 // ---------------------------------------------------------------------------
+
+/// FreeLLMAPI — local OpenAI-compatible proxy/router.
+/// Reads `FREELLMAPI_BASE_URL` for the base URL; defaults to `http://127.0.0.1:3001`.
+/// Reads `FREELLMAPI_API_KEY` for the unified local API key.
+pub fn freellmapi() -> OpenAiCompatProvider {
+    let key = std::env::var("FREELLMAPI_API_KEY").unwrap_or_default();
+    let host = std::env::var("FREELLMAPI_BASE_URL")
+        .unwrap_or_else(|_| "http://127.0.0.1:3001".to_string());
+    let base_url = format!("{}/v1", host.trim_end_matches('/').trim_end_matches("/v1"));
+    OpenAiCompatProvider::new(ProviderId::FREELLMAPI, "FreeLLMAPI", base_url)
+        .with_api_key(key)
+        .with_quirks(ProviderQuirks {
+            reasoning_field: Some("reasoning_content".to_string()),
+            requires_reasoning_roundtrip: true,
+            ..Default::default()
+        })
+}
 
 /// Ollama — local inference server.
 /// Reads `OLLAMA_HOST` for the base URL; defaults to `http://localhost:11434`.
@@ -112,12 +130,8 @@ pub fn llama_cpp() -> OpenAiCompatProvider {
 pub fn custom_openai_with_url(base_url: impl Into<String>) -> OpenAiCompatProvider {
     let key = std::env::var("CUSTOM_OPENAI_API_KEY").unwrap_or_default();
 
-    OpenAiCompatProvider::new(
-        "custom-openai",
-        "Custom OpenAI-Compatible",
-        base_url.into(),
-    )
-    .with_api_key(key)
+    OpenAiCompatProvider::new("custom-openai", "Custom OpenAI-Compatible", base_url.into())
+        .with_api_key(key)
 }
 
 /// Custom OpenAI-compatible provider supplied by the user.
@@ -516,6 +530,8 @@ pub fn opencode_zen() -> OpenAiCompatProvider {
     )
     .with_api_key(key)
     .with_quirks(ProviderQuirks {
+        reasoning_field: Some("reasoning_content".to_string()),
+        requires_reasoning_roundtrip: true,
         include_usage_in_stream: true,
         ..Default::default()
     })
@@ -525,16 +541,12 @@ pub fn opencode_zen() -> OpenAiCompatProvider {
 /// Reads `CROF_API_KEY` for authentication.
 pub fn crof() -> OpenAiCompatProvider {
     let key = std::env::var("CROF_API_KEY").unwrap_or_default();
-    OpenAiCompatProvider::new(
-        ProviderId::CROF,
-        "Crof.ai",
-        "https://api.crof.ai/v1",
-    )
-    .with_api_key(key)
-    .with_quirks(ProviderQuirks {
-        include_usage_in_stream: true,
-        ..Default::default()
-    })
+    OpenAiCompatProvider::new(ProviderId::CROF, "Crof.ai", "https://api.crof.ai/v1")
+        .with_api_key(key)
+        .with_quirks(ProviderQuirks {
+            include_usage_in_stream: true,
+            ..Default::default()
+        })
 }
 
 /// Synthetic.dev — OpenAI-compatible endpoint with curated model selection.
